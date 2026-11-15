@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Most settings live in mods\Directory.Build.props / .targets. -->
+  <PropertyGroup>
+    <AssemblyName>BlueprintShop</AssemblyName>
+    <RootNamespace>BlueprintShop</RootNamespace>
+    <Version>0.3.0</Version>
+    <!-- Folder name under <game>\Mods\ -->
+    <ModFolderName>BlueprintShop</ModFolderName>
+  </PropertyGroup>
+</Project>

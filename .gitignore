@@ -1,0 +1,20 @@
+# Build output
+bin/
+obj/
+*.user
+
+# Machine-specific build settings (game path etc.)
+Directory.Build.local.props
+
+# Repo-local .NET SDK, if you install one here
+.dotnet/
+
+# Packaged builds
+_dist/
+*.zip
+
+# Editors / OS
+.vs/
+*.swp
+Thumbs.db
+desktop.ini
