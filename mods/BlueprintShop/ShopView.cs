@@ -18,7 +18,8 @@ namespace BlueprintShop
     /// any UI or reads input. Everything else stays dormant.
     ///
     /// Input: the view registers as an IInputConsumer and consumes the owner's input while open,
-    /// so the owner's chef stands still and other local players keep playing. Keyboard players
+    /// and holds a NonPause lock on that player, so the owner's chef stands still and other local
+    /// players keep playing. Keyboard players
     /// use the mouse (and can type to search); controller players get a stick-driven cursor that
     /// snaps to nearby buttons, plus an on-screen QWERTY keyboard for search.
     /// </summary>
@@ -138,6 +139,12 @@ namespace BlueprintShop
         // ---- input
         private InputState LastInput;
         private bool HasFreshInput;
+        // Per-player NonPause lock held while the menu is open, like vanilla's dish/costume menus.
+        // Consuming input alone only neutralises the ECS input: the local chef's walking
+        // (PlayerWalkingComponent) reads the raw state via GetCurrentInputData, which only a lock
+        // blanks. The lock also tells other mods this player is in a menu.
+        private InputLock.Lock PlayerLock;
+        private bool HoldsPlayerLock;
         private Vector2 VirtualCursor;
         private bool VirtualCursorPlaced;
         private bool UsesMouse;
@@ -255,6 +262,7 @@ namespace BlueprintShop
             SaveCart();
             SetSearchFocus(false);
             LocalInputSourceConsumers.Remove(this);
+            ReleasePlayerLock();
             OpenLocal.Remove(this);
             RestoreCursor();
             if (CanvasRoot != null)
@@ -275,9 +283,40 @@ namespace BlueprintShop
             }
             LastInput = state;
             HasFreshInput = true;
-            // Consumed: the game sends neutral input for this player, so they stand still.
+            // Consumed: the ECS gets neutral input for this player (no interacting). Walking is
+            // stopped by PlayerLock, since the chef view reads the raw state.
             return InputConsumerState.Consumed;
         }
+
+        private void AcquirePlayerLock()
+        {
+            BaseInputSource input = InputSourceIdentifier.DefaultInputSource;
+            if (HoldsPlayerLock || input == null)
+            {
+                return;
+            }
+            PlayerLock = input.SetInputLock(Data.OwnerPlayerID, PlayerLockState.NonPause);
+            // SetInputLock returns an Unlocked default if the player isn't known locally.
+            HoldsPlayerLock = PlayerLock.Type != PlayerLockState.Unlocked;
+        }
+
+        private void ReleasePlayerLock()
+        {
+            if (!HoldsPlayerLock)
+            {
+                return;
+            }
+            HoldsPlayerLock = false;
+            InputSourceIdentifier.DefaultInputSource?.ReleaseLock(Data.OwnerPlayerID, PlayerLock);
+        }
+
+        /// <summary>
+        /// True while a game-wide menu holds the global input lock (another local player's pause
+        /// menu, the disconnect screen, a text-entry box, the Steam overlay). The shop's raw
+        /// mouse/keyboard reads would otherwise keep acting on the window behind it.
+        /// </summary>
+        private static bool GlobalInputLocked() =>
+            InputSourceIdentifier.DefaultInputSource?.GlobalLock.IsLocked ?? false;
 
         private static bool IsPressed(ButtonState s) => s == ButtonState.Pressed;
 
@@ -332,6 +371,14 @@ namespace BlueprintShop
 
             LayoutSlot();
             RefreshFromData();
+
+            // Another menu has the whole game's input: keep the window drawn but ignore input,
+            // including anything typed meanwhile.
+            if (GlobalInputLocked())
+            {
+                TypedChars.Clear();
+                return;
+            }
 
             // ---- typing (keyboard players)
             if (SearchFocused)
@@ -1193,6 +1240,7 @@ namespace BlueprintShop
             Built = true;
             OpenLocal.Add(this);
             LocalInputSourceConsumers.Register(this);
+            AcquirePlayerLock();
             ApplyCursorMode();
             SetStatus("Add items to your cart, or take a blueprint for a cabinet or desk.", ShopTheme.TextDim);
             ShopLog.Debug(() => $"Built shop menu for player {Data.OwnerPlayerID}");

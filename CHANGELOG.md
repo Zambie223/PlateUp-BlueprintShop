@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1 (unreleased)
+
+- Your chef no longer walks around behind the shop window when you move the stick or press movement keys (including typing in search).
+- The shop now marks its player as "in a menu", the same way the game's own menus do, so other mods that check for this leave that player's input alone.
+- While another menu takes over the game's input (for example a second local player's pause menu), the shop window behind it ignores input.
+
 ## 0.3.0 (first public release)
 
 - A shop terminal replaces the reroll button at night. Every blueprint the game could offer tonight is listed, in any quantity.
