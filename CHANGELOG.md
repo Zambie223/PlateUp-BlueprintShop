@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.1 (unreleased)
+## 0.3.1
 
 - Your chef no longer walks around behind the shop window when you move the stick or press movement keys (including typing in search).
 - The shop now marks its player as "in a menu", the same way the game's own menus do, so other mods that check for this leave that player's input alone.
