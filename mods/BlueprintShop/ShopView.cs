@@ -270,7 +270,25 @@ namespace BlueprintShop
                 Destroy(CanvasRoot);
                 CanvasRoot = null;
             }
+            if (Built && IsLocalOwner)
+            {
+                // Don't let the closing click/press (or a still-held button) reach the game.
+                InputDrain.Begin(Data.OwnerPlayerID, UsesMouse);
+            }
             Built = false;
+        }
+
+        /// <summary>True while this machine shows an open shop window for the given player.</summary>
+        public static bool IsOpenLocallyFor(int playerId)
+        {
+            foreach (ShopView view in OpenLocal)
+            {
+                if (view != null && view.Built && !view.ClosedLocally && view.Data.OwnerPlayerID == playerId)
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         // ================================================================= input
@@ -535,7 +553,13 @@ namespace BlueprintShop
                     }
                 }
             }
-            if (rightClick && !OskOpen)
+            if (rightClick && hovered == SearchBox)
+            {
+                // Right-clicking the box starts a fresh search (user request).
+                SetSearch("");
+                SetSearchFocus(true);
+            }
+            else if (rightClick && !OskOpen)
             {
                 Card card = CardAt(pointer);
                 if (card != null)
@@ -750,7 +774,7 @@ namespace BlueprintShop
             if (HintText != null)
             {
                 HintText.text = UsesMouse
-                    ? "Click: select  •  Right-click a card: remove one  •  Wheel: scroll  •  Ctrl+F: search  •  Ctrl+A: clear search  •  Esc: close"
+                    ? "Click: select  •  Right-click a card: remove one  •  Wheel: scroll  •  Ctrl+F: search  •  Ctrl+A or right-click search: clear  •  Esc: close"
                     : "Stick: move (snaps to buttons)  •  Interact/Grab: select  •  Y/Triangle: clear search  •  Back: close  •  Hold the cursor at the top/bottom of the list to scroll";
             }
         }

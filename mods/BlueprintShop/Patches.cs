@@ -51,4 +51,30 @@ namespace BlueprintShop
             }
         }
     }
+
+    /// <summary>
+    /// In build mode with a mouse, the crane steers toward the mouse pointer. It reads the
+    /// pointer directly (GetMousePosition), so neither consuming input nor the shop's input
+    /// lock stops it, and it chased the cursor around behind the shop window. While the
+    /// player's shop is open locally, report "no new mouse target", and keep the crane's last
+    /// seen pointer position current so it doesn't jump to the pointer when the shop closes
+    /// (it follows again once the mouse moves).
+    /// </summary>
+    [HarmonyPatch(typeof(PlayerCraneMovementComponent), "IsIssuingMouseTarget")]
+    internal static class CraneMouseTargetPatch
+    {
+        private static bool Prefix(int player_id, ref Vector2 ___RecentMousePosition, ref bool __result)
+        {
+            if (!ShopView.IsOpenLocallyFor(player_id))
+            {
+                return true;
+            }
+            if (Controllers.InputSourceIdentifier.DefaultInputSource != null)
+            {
+                ___RecentMousePosition = Controllers.InputSourceIdentifier.DefaultInputSource.GetMousePosition();
+            }
+            __result = false;
+            return false;
+        }
+    }
 }

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.2
+
+- Build mode with a mouse: the crane no longer follows your mouse around behind the shop window.
+- The click or button press that closes the shop no longer also reaches the game (for example making the build-mode crane pick something up).
+- Right-clicking the search box clears it and starts a fresh search.
+
 ## 0.3.1
 
 - Your chef no longer walks around behind the shop window when you move the stick or press movement keys (including typing in search).
