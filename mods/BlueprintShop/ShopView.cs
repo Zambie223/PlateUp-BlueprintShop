@@ -115,7 +115,9 @@ namespace BlueprintShop
         private int RenderedCatalogHash;
         private int RenderedOwnedHash;
         private int RenderedMoney = int.MinValue;
-        private (HeldKind, int, int, ShopStateFlags) RenderedHeld = (HeldKind.None, -1, -1, ShopStateFlags.None);
+        private (HeldKind, int, int, ShopStateFlags, bool) RenderedHeld = (HeldKind.None, -1, -1, ShopStateFlags.None, false);
+        private int RenderedOutsideHash = int.MinValue;
+        private float OutsideConfirmUntil;
         private Category ActiveCategory = Category.All;
         private readonly Queue<ShopResponseData> Outgoing = new Queue<ShopResponseData>();
         private int NextSequence = 1;
@@ -173,6 +175,9 @@ namespace BlueprintShop
         private RectTransform SellBox;
         private TextMeshProUGUI SellText;
         private UiButton SellButton;
+        private RectTransform OutsideBox;
+        private TextMeshProUGUI OutsideText;
+        private UiButton OutsideButton;
         private RectTransform CartViewport;
         private RectTransform CartContent;
         private TextMeshProUGUI TotalText;
@@ -572,6 +577,11 @@ namespace BlueprintShop
             {
                 SellConfirmUntil = 0f;
                 RefreshSellBox(force: true);
+            }
+            if (Time.unscaledTime > OutsideConfirmUntil && OutsideConfirmUntil > 0f)
+            {
+                OutsideConfirmUntil = 0f;
+                RefreshOutsideBox(force: true);
             }
 
             UpdateSearchLabel();
@@ -1049,10 +1059,12 @@ namespace BlueprintShop
                     SetStatus(Data.Status, Data.LastSucceeded ? ShopTheme.Good : ShopTheme.Bad);
                     CartDirty = true;
                     RefreshSellBox(force: true);
+                    RefreshOutsideBox(force: true);
                 }
             }
 
             RefreshSellBox(force: false);
+            RefreshOutsideBox(force: false);
 
             if (CartDirty)
             {
@@ -1368,6 +1380,21 @@ namespace BlueprintShop
             Ui.Layout(SellButton.Rect, prefH: 38);
             StaticButtons.Add(SellButton);
             SellBox.gameObject.SetActive(false);
+
+            // Sell everything bought that's been put outside (bin icon).
+            Image outside = Ui.Box(cartBg.transform, "Outside", ShopTheme.Card);
+            OutsideBox = outside.rectTransform;
+            Ui.Layout(OutsideBox, minH: 150, prefH: 150, flexH: 0);
+            Ui.Group<VerticalLayoutGroup>(OutsideBox, 6, new RectOffset(10, 10, 8, 8)).childForceExpandWidth = true;
+            OutsideText = Ui.Text(OutsideBox, "Text", "", 18, TextAlignmentOptions.TopLeft);
+            Ui.AutoSize(OutsideText, 12);
+            Ui.Layout(OutsideText, prefH: 90);
+            OutsideButton = Ui.Button(OutsideBox, "SellOutside", "Sell", 20, SellOutside);
+            OutsideButton.Normal = ShopTheme.Accent;
+            OutsideButton.Hover = new Color(1f, 0.72f, 0.3f);
+            Ui.Layout(OutsideButton.Rect, prefH: 38);
+            StaticButtons.Add(OutsideButton);
+            OutsideBox.gameObject.SetActive(false);
 
             TextMeshProUGUI cartTitle = Ui.Text(cartBg.transform, "Title", "Cart", 28);
             Ui.Layout(cartTitle, prefH: 36, flexH: 0);
@@ -1748,9 +1775,96 @@ namespace BlueprintShop
             }
         }
 
+        private void RefreshOutsideBox(bool force)
+        {
+            if (!force && Data.OutsideHash == RenderedOutsideHash)
+            {
+                return;
+            }
+            if (Data.OutsideHash != RenderedOutsideHash)
+            {
+                OutsideConfirmUntil = 0f; // the list changed: confirm again
+            }
+            RenderedOutsideHash = Data.OutsideHash;
+            List<OutsideLine> lines = Data.Outside;
+            OutsideBox.gameObject.SetActive(lines != null && lines.Count > 0);
+            if (lines == null || lines.Count == 0)
+            {
+                return;
+            }
+
+            int sellCount = 0, total = 0;
+            var sold = new StringBuilder();
+            var kept = new StringBuilder();
+            int shown = 0, hidden = 0;
+            foreach (OutsideLine line in lines)
+            {
+                string name = line.IsParcel ? $"Parcel ({ApplianceName(line.ApplianceID)})" : ApplianceName(line.ApplianceID);
+                if (line.SellCount > 0)
+                {
+                    sellCount += line.SellCount;
+                    total += line.Total;
+                    if (shown < 3)
+                    {
+                        sold.Append($"\n{name}{(line.SellCount > 1 ? $" x{line.SellCount}" : "")}: {Coin(line.Total)}");
+                        shown++;
+                    }
+                    else
+                    {
+                        hidden += line.SellCount;
+                    }
+                }
+                if (line.RequiredCount > 0)
+                {
+                    kept.Append(kept.Length == 0 ? "" : ", ").Append(name);
+                }
+            }
+            var text = new StringBuilder("<b>Items outside</b>");
+            text.Append(sold);
+            if (hidden > 0)
+            {
+                text.Append($"\n<color=#BFB2A3>+{hidden} more</color>");
+            }
+            if (kept.Length > 0)
+            {
+                text.Append($"\n<color=#E05A47>Your menu needs: {kept}. Bring it back in.</color>");
+            }
+            OutsideText.text = text.ToString();
+
+            OutsideButton.Rect.gameObject.SetActive(sellCount > 0);
+            bool confirming = Time.unscaledTime <= OutsideConfirmUntil;
+            OutsideButton.Label.text = confirming
+                ? "Click again to confirm"
+                : $"Sell {sellCount} item{(sellCount == 1 ? "" : "s")} for {Coin(total)}";
+            OutsideButton.Interactable = AwaitingSequence == 0;
+            OutsideButton.Refresh();
+        }
+
+        private void SellOutside()
+        {
+            if (Data.Outside == null || Data.Outside.Count == 0)
+            {
+                return;
+            }
+            if (Time.unscaledTime > OutsideConfirmUntil)
+            {
+                // First click arms it; selling destroys the appliances, so ask once more.
+                OutsideConfirmUntil = Time.unscaledTime + SellConfirmSeconds;
+                RefreshOutsideBox(force: true);
+                return;
+            }
+            OutsideConfirmUntil = 0f;
+            SendOrder(ShopAction.SellOutside, new List<ShopOrderLine>
+            {
+                // The host refuses if what's outside no longer matches the list shown here.
+                new ShopOrderLine { Kind = ShopEntryKind.Appliance, ID = 0, Quantity = Data.OutsideHash }
+            }, "Selling items outside...");
+            RefreshOutsideBox(force: true);
+        }
+
         private void RefreshSellBox(bool force)
         {
-            var state = (Data.HeldKind, Data.HeldID, Data.HeldRefund, Data.StateFlags);
+            var state = (Data.HeldKind, Data.HeldID, Data.HeldRefund, Data.StateFlags, Data.HeldRequired);
             if (!force && state == RenderedHeld)
             {
                 return;
@@ -1768,8 +1882,14 @@ namespace BlueprintShop
                 SellButton.Rect.gameObject.SetActive(false);
                 return;
             }
-            SellButton.Rect.gameObject.SetActive(true);
             string what = Data.HeldKind == HeldKind.Parcel ? $"a parcel ({ApplianceName(Data.HeldID)})" : ApplianceName(Data.HeldID);
+            if (Data.HeldRequired)
+            {
+                SellText.text = $"Holding <b>{what}</b>\n<color=#E05A47>Your menu needs it and nothing else does its job, so it can't be sold.</color>";
+                SellButton.Rect.gameObject.SetActive(false);
+                return;
+            }
+            SellButton.Rect.gameObject.SetActive(true);
             string note = (Data.StateFlags & ShopStateFlags.UninstallPrep) != 0
                 ? "Uninstall prep is on, so refunds are $0."
                 : Data.HeldRefund > 0 ? "Refund is what you paid." : "It was free, so there's no refund.";

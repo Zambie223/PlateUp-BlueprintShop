@@ -16,6 +16,11 @@ namespace BlueprintShop
 
         public const int ResponseUnionKey = Base + 2;
 
+        /// <summary>Floating refund label over binned appliances (see SaleLabels.cs).</summary>
+        public static readonly ViewType LabelViewType = (ViewType)(Base + 3);
+
+        public const int LabelUnionKey = Base + 4;
+
         /// <summary>Price sent to the reroll view of a shop terminal so clients relabel it.</summary>
         public const int TerminalPriceSentinel = -1;
     }
@@ -57,6 +62,18 @@ namespace BlueprintShop
     /// One open shop menu, owned by one player. Created with CRequiresView (our ViewType) and
     /// CDoNotPersist; destroyed when the menu closes, the day starts, or the player leaves.
     /// </summary>
+    /// <summary>
+    /// A refund label entity floating over one binned appliance (Source). Host-only bookkeeping,
+    /// created with CRequiresView (LabelViewType) and CDoNotPersist, so it's never saved.
+    /// Nothing is added to the appliance itself, to keep saves free of extra mod data.
+    /// </summary>
+    public struct CSaleLabel : IModComponent
+    {
+        public Entity Source;
+        public int Refund;
+        public bool Required;
+    }
+
     public struct CShopSession : IModComponent
     {
         public Entity Player;

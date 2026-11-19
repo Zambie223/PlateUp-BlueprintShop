@@ -71,6 +71,7 @@ namespace BlueprintShop
             }
             // After orders/sales, so the counts include what was just bought or sold.
             List<OwnedCount> owned = Service.CountOwned(catalog, out int ownedHash);
+            ShopService.OutsideSale outside = Service.ComputeOutsideSale();
 
             for (int i = 0; i < entities.Length; i++)
             {
@@ -97,7 +98,10 @@ namespace BlueprintShop
                     HeldID = held.ApplianceID,
                     HeldRefund = held.Refund,
                     OwnedHash = ownedHash,
-                    Owned = owned
+                    Owned = owned,
+                    HeldRequired = held.Required,
+                    OutsideHash = outside.Hash,
+                    Outside = outside.Lines
                 });
             }
         }

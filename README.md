@@ -24,6 +24,8 @@ To update, replace the files in `Mods\BlueprintShop\`. To remove the mod, see [S
 - **Buying:** add items to your cart and press **Purchase**. Paid items arrive as parcels on the letter tiles by the door, like your starting appliances. The top right shows your balance and what you'll have left after the cart. Your cart is remembered if you close the menu, until the day starts.
 - **Blueprints:** each item also has a **Blueprint** button. It drops a normal, unpaid blueprint outside, for a blueprint cabinet or a research, copying or discount desk.
 - **Selling:** pick up an appliance (or an unopened parcel), open the shop, and use **Sell** at the top of the cart. You get back exactly what you paid for it: the discounted price if you bought it on discount, and nothing for things you got for free (starting kit, card rewards). The button asks you to click twice, because selling removes the appliance.
+- **Selling in bulk:** put everything you want to sell outside, where the game shows its bin icon. Each item you bought through the shop gets a floating price showing its refund. The shop then lists those items under **Items outside**, and one button (click twice) sells them all at once. The money is yours straight away, so you can spend it the same night. Anything you bought and forget to sell is refunded automatically at the start of the next day, instead of being thrown away for nothing. Free items aren't included; the game throws them away as usual.
+- **Things your menu needs:** you can't sell the last appliance that does a job your dishes require (for example your only sink), whether you're holding it or it's outside. Its floating label says **Needed** instead of a price. This is the same check the game uses when it warns you before the day starts.
 - **Decoration nights** (every 3rd night by default): the shop adds every eligible decoration and event item, plus every wallpaper and floor (free). Normal appliances are still on sale.
 
 ### Controls
@@ -34,7 +36,7 @@ To update, replace the files in `Mods\BlueprintShop\`. To remove the mod, see [S
 | Select | Left click | Interact, Grab or Menu Select |
 | Remove one from cart | Right-click a card | Use the "-" button in the cart |
 | Search | Click the search box or Ctrl+F, then type | Select the search box for the on-screen keyboard |
-| Clear search | Ctrl+A, or the Clear button | Y / Triangle (your "third action" button if you've rebound it), or the Clear button |
+| Clear search | Ctrl+A, right-click the search box, or the Clear button | Y / Triangle (your "third action" button if you've rebound it), or the Clear button |
 | Scroll | Mouse wheel | Hold the cursor near the top or bottom of the list |
 | Close | Esc (first Esc leaves the search box) | Back or Start (first press closes the keyboard) |
 
@@ -59,6 +61,8 @@ Two settings in `BlueprintShop.cfg` (see [Troubleshooting](#troubleshooting) for
 | `normal_items_on_decor_nights` | `true` | `false` | Decoration nights also sell normal appliances. In vanilla those nights only have decorations. |
 
 With the defaults, normal appliances are on sale every night, so upgrades can appear from night 5 instead of night 6. Restart the game after changing a setting.
+
+One more change has no setting: in vanilla, appliances left outside are thrown away for nothing at the start of the day. With this mod, anything you bought through the shop is refunded at that point instead. Things you got for free are still thrown away for nothing.
 
 ## Saves and uninstalling
 

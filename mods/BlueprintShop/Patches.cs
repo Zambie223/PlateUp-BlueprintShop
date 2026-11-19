@@ -14,8 +14,23 @@ namespace BlueprintShop
     {
         private static GameObject _template;
 
+        private static GameObject _labelTemplate;
+
         private static bool Prefix(ViewType view_type, ref GameObject __result)
         {
+            if (view_type == ShopIds.LabelViewType)
+            {
+                if (_labelTemplate == null)
+                {
+                    _labelTemplate = new GameObject("BlueprintShop Sale Label Template");
+                    _labelTemplate.SetActive(false);
+                    _labelTemplate.AddComponent<SaleLabelView>();
+                    Object.DontDestroyOnLoad(_labelTemplate);
+                    ShopLog.Debug(() => "Created sale label template");
+                }
+                __result = _labelTemplate;
+                return false;
+            }
             if (view_type != ShopIds.ViewType)
             {
                 return true;

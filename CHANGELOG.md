@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0
+
+- Sell in bulk: put things outside (where the game shows its bin icon), then sell them all from the shop's new "Items outside" panel. The money arrives straight away.
+- Things you bought get a floating price over them while they're outside.
+- Anything you bought and leave outside is refunded at the start of the day instead of being thrown away for nothing.
+- You can't sell the last appliance your menu needs (for example your only sink), whether you're holding it or it's outside. Its label says "Needed".
+- All players in an online game need 0.4.0; it can't be mixed with 0.3.x.
+
 ## 0.3.2
 
 - Build mode with a mouse: the crane no longer follows your mouse around behind the shop window.

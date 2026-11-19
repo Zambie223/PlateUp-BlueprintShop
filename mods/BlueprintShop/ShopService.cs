@@ -35,6 +35,12 @@ namespace BlueprintShop
         private EntityQuery PendingBlueprints;
         private EntityQuery LetterBlueprints;
         private EntityQuery PlacedAppliances;
+        private EntityQuery BinnedAppliances;
+        private EntityQuery UnbinnedAppliances;
+        private EntityQuery Unlocks;
+
+        /// <summary>Appliance ID -> IDs of the processes it registers (static game data).</summary>
+        private readonly Dictionary<int, int[]> ProcessCache = new Dictionary<int, int[]>();
 
         /// <summary>Open requests from OpenShopInteraction, handled on our next update.</summary>
         private readonly List<Entity> OpenRequests = new List<Entity>();
@@ -61,6 +67,28 @@ namespace BlueprintShop
             public int ApplianceID;
             public int Refund;
             public Entity Entity;
+            /// <summary>Selling it would leave the menu without a required process (see RequirementCheck).</summary>
+            public bool Required;
+        }
+
+        /// <summary>One binned (outside) appliance or parcel that was bought through the shop.</summary>
+        public struct OutsideItem
+        {
+            public Entity Entity;
+            public int ApplianceID;
+            public bool IsParcel;
+            public int Refund;
+            public bool Required;
+        }
+
+        public sealed class OutsideSale
+        {
+            public readonly List<OutsideItem> Items = new List<OutsideItem>();
+            public readonly List<OutsideLine> Lines = new List<OutsideLine>();
+            public int Hash;
+            public int Total;
+            public int SellCount;
+            public int RequiredCount;
         }
 
         public const int MaxQuantityPerLine = 99;
@@ -97,6 +125,13 @@ namespace BlueprintShop
             PendingBlueprints = GetEntityQuery(typeof(CApplianceBlueprint));
             LetterBlueprints = GetEntityQuery(typeof(CLetterBlueprint));
             PlacedAppliances = GetEntityQuery(typeof(CAppliance));
+            // Vanilla's MarkOutsideAppliancesForDestruction tags appliances on outside tiles
+            // (the bin icon); DestroyAppliancesAtDay deletes them for $0 at day start.
+            BinnedAppliances = GetEntityQuery(new QueryHelper()
+                .All(typeof(CAppliance), typeof(CDestroyApplianceAtDay), typeof(CPosition))
+                .None(typeof(CHeldAppliance)));
+            UnbinnedAppliances = GetEntityQuery(new QueryHelper().All(typeof(CAppliance)).None(typeof(CDestroyApplianceAtDay)));
+            Unlocks = GetEntityQuery(typeof(CProgressionUnlock));
         }
 
         /// <summary>
@@ -538,6 +573,12 @@ namespace BlueprintShop
                 return info;
             }
             info.Refund = Require(held, out CPaidPrice paid) ? Math.Max(0, paid.Price) : 0;
+            RequirementCheck check = NewRequirementCheck();
+            if (check.Active)
+            {
+                AddBaseCoverage(check, held, null);
+                info.Required = check.WouldBreak(ProcessesOf(info.ApplianceID));
+            }
             return info;
         }
 
@@ -557,6 +598,11 @@ namespace BlueprintShop
             }
 
             string name = Data.TryGet(held.ApplianceID, out Appliance appliance) ? appliance.Name : $"Item {held.ApplianceID}";
+            if (held.Required)
+            {
+                message = $"Your menu needs {name}: nothing else in your kitchen can do its job, so it can't be sold.";
+                return false;
+            }
             // Anything sitting on the appliance goes with it (vanilla's day-start bin does the same).
             if (Require(held.Entity, out CItemHolder contents) && contents.HeldItem != Entity.Null && EntityManager.Exists(contents.HeldItem))
             {
@@ -573,6 +619,299 @@ namespace BlueprintShop
             message = held.Refund > 0 ? $"Sold {name} for {held.Refund}." : $"Got rid of {name} (it was free, so no refund).";
             ShopLog.Debug(() => $"Session {session}: sold {name} ({held.Kind}) for {held.Refund}");
             return true;
+        }
+
+        // ----------------------------------------------------------------- selling what's outside
+
+        /// <summary>
+        /// Everything outside (bin icon) that was bought through the shop, with its refund.
+        /// Free items (no CPaidPrice, or prepare_uninstall) are left out: vanilla bins them as
+        /// usual. Items the menu can't do without are flagged Required and never sold.
+        /// </summary>
+        public OutsideSale ComputeOutsideSale()
+        {
+            var sale = new OutsideSale();
+            if (ShopLog.PrepareUninstall || BinnedAppliances.IsEmpty)
+            {
+                sale.Hash = 17;
+                return sale;
+            }
+            using (NativeArray<Entity> entities = BinnedAppliances.ToEntityArray(Allocator.Temp))
+            {
+                foreach (Entity e in entities)
+                {
+                    if (!Require(e, out CDestroyApplianceAtDay bin) || bin.HideBin
+                        || !Require(e, out CPaidPrice paid) || paid.Price <= 0)
+                    {
+                        continue;
+                    }
+                    var item = new OutsideItem { Entity = e, Refund = paid.Price };
+                    if (Require(e, out CLetterAppliance letter))
+                    {
+                        item.IsParcel = true;
+                        item.ApplianceID = letter.ApplianceID;
+                    }
+                    else if (Require(e, out CAppliance appliance))
+                    {
+                        item.ApplianceID = appliance.ID;
+                    }
+                    sale.Items.Add(item);
+                }
+            }
+
+            // Required check, cheapest first: when several copies could cover a job, the cheapest
+            // is kept and the more valuable ones are sold.
+            sale.Items.Sort((a, b) => a.Refund != b.Refund ? a.Refund.CompareTo(b.Refund) : a.Entity.Index.CompareTo(b.Entity.Index));
+            RequirementCheck check = NewRequirementCheck();
+            if (check.Active)
+            {
+                var candidates = new HashSet<Entity>();
+                foreach (OutsideItem item in sale.Items)
+                {
+                    candidates.Add(item.Entity);
+                }
+                AddBaseCoverage(check, Entity.Null, candidates);
+                for (int i = 0; i < sale.Items.Count; i++)
+                {
+                    OutsideItem item = sale.Items[i];
+                    if (check.WouldBreak(ProcessesOf(item.ApplianceID)))
+                    {
+                        item.Required = true;
+                        sale.Items[i] = item;
+                        check.Cover(ProcessesOf(item.ApplianceID));
+                    }
+                }
+            }
+
+            var lines = new Dictionary<(int, bool), OutsideLine>();
+            foreach (OutsideItem item in sale.Items)
+            {
+                lines.TryGetValue((item.ApplianceID, item.IsParcel), out OutsideLine line);
+                line.ApplianceID = item.ApplianceID;
+                line.IsParcel = item.IsParcel;
+                if (item.Required)
+                {
+                    line.RequiredCount++;
+                    sale.RequiredCount++;
+                }
+                else
+                {
+                    line.SellCount++;
+                    line.Total += item.Refund;
+                    sale.SellCount++;
+                    sale.Total += item.Refund;
+                }
+                lines[(item.ApplianceID, item.IsParcel)] = line;
+            }
+            sale.Lines.AddRange(lines.Values);
+            sale.Lines.Sort((a, b) => a.ApplianceID != b.ApplianceID ? a.ApplianceID.CompareTo(b.ApplianceID) : a.IsParcel.CompareTo(b.IsParcel));
+            int hash = 17;
+            unchecked
+            {
+                foreach (OutsideLine l in sale.Lines)
+                {
+                    hash = hash * 31 + l.ApplianceID;
+                    hash = hash * 31 + (l.IsParcel ? 1 : 0);
+                    hash = hash * 31 + l.SellCount;
+                    hash = hash * 31 + l.Total;
+                    hash = hash * 31 + l.RequiredCount;
+                }
+            }
+            sale.Hash = hash;
+            return sale;
+        }
+
+        /// <summary>Sells (destroys) every sellable outside item and adds the refunds to the money.</summary>
+        private bool ExecuteSellOutside(List<ShopOrderLine> lines, out string message)
+        {
+            OutsideSale sale = ComputeOutsideSale();
+            // The menu sends the hash of the list it showed; refuse if it has changed since.
+            if (lines == null || lines.Count != 1 || lines[0].Quantity != sale.Hash)
+            {
+                message = "The items outside changed. Check the list and confirm again.";
+                return false;
+            }
+            if (sale.SellCount == 0)
+            {
+                message = sale.RequiredCount > 0
+                    ? "Everything outside is needed by your menu, so nothing was sold."
+                    : "There's nothing outside to sell.";
+                return false;
+            }
+            foreach (OutsideItem item in sale.Items)
+            {
+                if (item.Required || !EntityManager.Exists(item.Entity))
+                {
+                    continue;
+                }
+                // Anything sitting on it goes too, as with single sells and vanilla's day-start bin.
+                if (Require(item.Entity, out CItemHolder contents) && contents.HeldItem != Entity.Null && EntityManager.Exists(contents.HeldItem))
+                {
+                    EntityManager.DestroyEntity(contents.HeldItem);
+                }
+                EntityManager.DestroyEntity(item.Entity);
+            }
+            int money = GetOrDefault<SMoney>().Amount;
+            Set(new SMoney { Amount = money + sale.Total });
+            message = $"Sold {sale.SellCount} item{(sale.SellCount == 1 ? "" : "s")} from outside for {sale.Total}.";
+            if (sale.RequiredCount > 0)
+            {
+                message += $" Kept {sale.RequiredCount} your menu needs.";
+            }
+            int count = sale.SellCount, total = sale.Total, kept = sale.RequiredCount;
+            ShopLog.Debug(() => $"Sold {count} outside item(s) for {total}; kept {kept} required");
+            return true;
+        }
+
+        // ----------------------------------------------------------------- required appliances
+
+        /// <summary>
+        /// Mirrors vanilla's CheckSellingRequiredAppliance (the start-of-day "you're selling
+        /// something you need" warning): every process an unlocked dish requires must be provided
+        /// by some appliance or parcel, and dishes that need cleaning (with a main course) need a
+        /// cleaning process. Selling something that breaks this is refused: vanilla would warn,
+        /// and GrantNecessaryAppliances hands out a free sink when cleaning is missing, which
+        /// would turn a refund into free money.
+        /// </summary>
+        internal sealed class RequirementCheck
+        {
+            public readonly HashSet<int> Needed = new HashSet<int>();
+            public readonly HashSet<int> Covered = new HashSet<int>();
+            public bool NeedsCleaning;
+            public bool CleaningCovered;
+
+            public bool Active => Needed.Count > 0 || NeedsCleaning;
+
+            public void Cover(int[] processes)
+            {
+                foreach (int p in processes)
+                {
+                    Covered.Add(p);
+                    if (AssetReference.MustHaveOneOfProcesses.Contains(p))
+                    {
+                        CleaningCovered = true;
+                    }
+                }
+            }
+
+            /// <summary>True if removing an appliance with these processes leaves a requirement unmet.</summary>
+            public bool WouldBreak(int[] processes)
+            {
+                foreach (int p in processes)
+                {
+                    if (Needed.Contains(p) && !Covered.Contains(p))
+                    {
+                        return true;
+                    }
+                    if (NeedsCleaning && !CleaningCovered && AssetReference.MustHaveOneOfProcesses.Contains(p))
+                    {
+                        return true;
+                    }
+                }
+                return false;
+            }
+        }
+
+        private RequirementCheck NewRequirementCheck()
+        {
+            var check = new RequirementCheck();
+            bool cleaningDish = false;
+            bool mainNeedingCleaning = false;
+            using (NativeArray<CProgressionUnlock> unlocks = Unlocks.ToComponentDataArray<CProgressionUnlock>(Allocator.Temp))
+            {
+                foreach (CProgressionUnlock unlock in unlocks)
+                {
+                    if (!Data.TryGet(unlock.ID, out Dish dish))
+                    {
+                        continue;
+                    }
+                    if (dish.RequiresCleaning)
+                    {
+                        cleaningDish = true;
+                        if (dish.UnlocksMenuItems != null)
+                        {
+                            foreach (Dish.MenuItem item in dish.UnlocksMenuItems)
+                            {
+                                if (item.Phase == MenuPhase.Main)
+                                {
+                                    mainNeedingCleaning = true;
+                                }
+                            }
+                        }
+                    }
+                    if (dish.RequiredProcesses == null)
+                    {
+                        continue;
+                    }
+                    foreach (Process process in dish.RequiredProcesses)
+                    {
+                        if (process == null)
+                        {
+                            continue;
+                        }
+                        // Unity objects: compare with == null, not ??.
+                        Process real = process.IsPseudoprocessFor != null ? process.IsPseudoprocessFor : process;
+                        check.Needed.Add(real.ID);
+                    }
+                }
+            }
+            check.NeedsCleaning = cleaningDish && mainNeedingCleaning;
+            return check;
+        }
+
+        /// <summary>
+        /// What the kitchen provides without the items being checked: every appliance that isn't
+        /// outside (vanilla doesn't count binned ones) and every parcel, except
+        /// <paramref name="exclude"/> and <paramref name="candidates"/>.
+        /// </summary>
+        private void AddBaseCoverage(RequirementCheck check, Entity exclude, HashSet<Entity> candidates)
+        {
+            using (NativeArray<Entity> entities = UnbinnedAppliances.ToEntityArray(Allocator.Temp))
+            using (NativeArray<CAppliance> appliances = UnbinnedAppliances.ToComponentDataArray<CAppliance>(Allocator.Temp))
+            {
+                for (int i = 0; i < entities.Length; i++)
+                {
+                    if (entities[i] == exclude || (candidates != null && candidates.Contains(entities[i])))
+                    {
+                        continue;
+                    }
+                    check.Cover(ProcessesOf(appliances[i].ID));
+                }
+            }
+            using (NativeArray<Entity> entities = PendingParcels.ToEntityArray(Allocator.Temp))
+            using (NativeArray<CLetterAppliance> parcels = PendingParcels.ToComponentDataArray<CLetterAppliance>(Allocator.Temp))
+            {
+                for (int i = 0; i < entities.Length; i++)
+                {
+                    if (entities[i] == exclude || (candidates != null && candidates.Contains(entities[i])))
+                    {
+                        continue;
+                    }
+                    check.Cover(ProcessesOf(parcels[i].ApplianceID));
+                }
+            }
+        }
+
+        private int[] ProcessesOf(int applianceId)
+        {
+            if (ProcessCache.TryGetValue(applianceId, out int[] cached))
+            {
+                return cached;
+            }
+            var ids = new List<int>();
+            if (applianceId != 0 && Data.TryGet(applianceId, out Appliance appliance) && appliance.Processes != null)
+            {
+                foreach (Appliance.ApplianceProcesses ap in appliance.Processes)
+                {
+                    if (ap.Validity != ProcessValidity.DoesNotRegister && ap.Process != null)
+                    {
+                        ids.Add(ap.Process.ID);
+                    }
+                }
+            }
+            int[] result = ids.ToArray();
+            ProcessCache[applianceId] = result;
+            return result;
         }
 
         // ----------------------------------------------------------------- orders
@@ -619,6 +958,10 @@ namespace BlueprintShop
             else if (response.Action == ShopAction.Sell)
             {
                 ok = ExecuteSell(session, response.Lines, out message);
+            }
+            else if (response.Action == ShopAction.SellOutside)
+            {
+                ok = ExecuteSellOutside(response.Lines, out message);
             }
             else
             {

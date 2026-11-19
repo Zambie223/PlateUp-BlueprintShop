@@ -40,7 +40,20 @@ namespace BlueprintShop
         TakeBlueprint = 2,
         Close = 3,
         /// <summary>Sell what the owner is holding. One line: the held appliance's ID.</summary>
-        Sell = 4
+        Sell = 4,
+        /// <summary>Sell everything outside (bin icon) that was bought. One line whose Quantity
+        /// is the OutsideHash the menu showed, so a changed list is refused.</summary>
+        SellOutside = 5
+    }
+
+    /// <summary>Outside items of one kind: how many will sell (and for how much), how many are kept.</summary>
+    public struct OutsideLine
+    {
+        public int ApplianceID;
+        public bool IsParcel;
+        public int SellCount;
+        public int Total;
+        public int RequiredCount;
     }
 
     public enum HeldKind : byte
@@ -94,6 +107,10 @@ namespace BlueprintShop
         public int HeldRefund;
         public int OwnedHash;
         public List<OwnedCount> Owned;
+        // v3
+        public bool HeldRequired;
+        public int OutsideHash;
+        public List<OutsideLine> Outside;
 
         public bool IsChangedFrom(ShopViewData check)
         {
@@ -110,8 +127,20 @@ namespace BlueprintShop
                 || HeldKind != check.HeldKind
                 || HeldID != check.HeldID
                 || HeldRefund != check.HeldRefund
-                || OwnedHash != check.OwnedHash;
+                || OwnedHash != check.OwnedHash
+                || HeldRequired != check.HeldRequired
+                || OutsideHash != check.OutsideHash;
         }
+    }
+
+    /// <summary>Host -> every machine: the floating refund label over one binned appliance.</summary>
+    public struct SaleLabelData : IViewData, IViewData.ICheckForChanges<SaleLabelData>
+    {
+        public int Refund;
+        /// <summary>Kept because the menu needs it; shown as "Needed" instead of a price.</summary>
+        public bool Required;
+
+        public bool IsChangedFrom(SaleLabelData check) => Refund != check.Refund || Required != check.Required;
     }
 
     /// <summary>Owner's machine -> host.</summary>
@@ -130,8 +159,9 @@ namespace BlueprintShop
     /// </summary>
     internal static class ShopSerializer
     {
-        private const int FormatVersion = 2;
-        private const int ViewFields = 17;
+        private const int FormatVersion = 3;
+        private const int ViewFields = 20;
+        private const int LabelFields = 3;
         private const int MaxEntries = 4096;
         private const int MaxLines = 512;
         private const int MaxStatusLength = 512;
@@ -172,6 +202,44 @@ namespace BlueprintShop
                 writer.Write(d.Owned[i].ID);
                 writer.Write(d.Owned[i].Count);
             }
+            writer.Write(d.HeldRequired);
+            writer.Write(d.OutsideHash);
+            int outside = d.Outside?.Count ?? 0;
+            writer.WriteArrayHeader(outside);
+            for (int i = 0; i < outside; i++)
+            {
+                OutsideLine l = d.Outside[i];
+                writer.WriteArrayHeader(5);
+                writer.Write(l.ApplianceID);
+                writer.Write(l.IsParcel);
+                writer.Write(l.SellCount);
+                writer.Write(l.Total);
+                writer.Write(l.RequiredCount);
+            }
+        }
+
+        public static void Write(ref MessagePackWriter writer, SaleLabelData d)
+        {
+            writer.WriteArrayHeader(LabelFields);
+            writer.Write(FormatVersion);
+            writer.Write(d.Refund);
+            writer.Write(d.Required);
+        }
+
+        public static SaleLabelData ReadLabel(ref MessagePackReader reader)
+        {
+            int fields = reader.ReadArrayHeader();
+            int version = reader.ReadInt32();
+            if (version != FormatVersion || fields != LabelFields)
+            {
+                throw new MessagePackSerializationException(
+                    $"{ModMain.Name}: label data format {version}/{fields} doesn't match this version of the mod ({FormatVersion}). All players need the same mod version.");
+            }
+            return new SaleLabelData
+            {
+                Refund = reader.ReadInt32(),
+                Required = reader.ReadBoolean()
+            };
         }
 
         public static ShopViewData ReadView(ref MessagePackReader reader)
@@ -227,6 +295,29 @@ namespace BlueprintShop
             for (int i = 0; i < ownedValues / 2; i++)
             {
                 d.Owned.Add(new OwnedCount { ID = reader.ReadInt32(), Count = reader.ReadInt32() });
+            }
+            d.HeldRequired = reader.ReadBoolean();
+            d.OutsideHash = reader.ReadInt32();
+            int outside = reader.ReadArrayHeader();
+            if (outside > MaxEntries)
+            {
+                throw new MessagePackSerializationException($"{ModMain.Name}: too many outside lines ({outside})");
+            }
+            d.Outside = new List<OutsideLine>(outside);
+            for (int i = 0; i < outside; i++)
+            {
+                if (reader.ReadArrayHeader() != 5)
+                {
+                    throw new MessagePackSerializationException($"{ModMain.Name}: malformed outside line");
+                }
+                d.Outside.Add(new OutsideLine
+                {
+                    ApplianceID = reader.ReadInt32(),
+                    IsParcel = reader.ReadBoolean(),
+                    SellCount = reader.ReadInt32(),
+                    Total = reader.ReadInt32(),
+                    RequiredCount = reader.ReadInt32()
+                });
             }
             return d;
         }

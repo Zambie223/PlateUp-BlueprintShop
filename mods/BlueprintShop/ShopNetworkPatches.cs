@@ -20,14 +20,21 @@ namespace BlueprintShop
     {
         private static bool Prefix(ref MessagePackWriter writer, IViewData value)
         {
-            if (!(value is ShopViewData data))
+            if (value is ShopViewData data)
             {
-                return true;
+                writer.WriteArrayHeader(2);
+                writer.Write(ShopIds.ViewDataUnionKey);
+                ShopSerializer.Write(ref writer, data);
+                return false;
             }
-            writer.WriteArrayHeader(2);
-            writer.Write(ShopIds.ViewDataUnionKey);
-            ShopSerializer.Write(ref writer, data);
-            return false;
+            if (value is SaleLabelData label)
+            {
+                writer.WriteArrayHeader(2);
+                writer.Write(ShopIds.LabelUnionKey);
+                ShopSerializer.Write(ref writer, label);
+                return false;
+            }
+            return true;
         }
     }
 
@@ -36,14 +43,21 @@ namespace BlueprintShop
     {
         private static bool Prefix(ref MessagePackReader reader, ref IViewData __result)
         {
-            if (!UnionPeek.IsKey(ref reader, ShopIds.ViewDataUnionKey))
+            if (UnionPeek.IsKey(ref reader, ShopIds.ViewDataUnionKey))
             {
-                return true;
+                reader.ReadArrayHeader();
+                reader.ReadInt32();
+                __result = ShopSerializer.ReadView(ref reader);
+                return false;
             }
-            reader.ReadArrayHeader();
-            reader.ReadInt32();
-            __result = ShopSerializer.ReadView(ref reader);
-            return false;
+            if (UnionPeek.IsKey(ref reader, ShopIds.LabelUnionKey))
+            {
+                reader.ReadArrayHeader();
+                reader.ReadInt32();
+                __result = ShopSerializer.ReadLabel(ref reader);
+                return false;
+            }
+            return true;
         }
     }
 
