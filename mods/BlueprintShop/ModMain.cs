@@ -21,7 +21,7 @@ namespace BlueprintShop
     {
         public const string Id = "zambie.blueprintshop";
         public const string Name = "Blueprint Shop";
-        public const string Version = "0.4.0";
+        public const string Version = "0.4.1";
 
         private static Harmony _harmony;
         private static bool _resolverRegistered;

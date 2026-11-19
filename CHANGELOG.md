@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1
+
+- Floating prices over items outside are easier to read: they sit above the bin icon instead of on it, use a dark backing instead of a thick outline, and stay within their own tile, so neighbouring prices no longer overlap. The coin icon is gold instead of white.
+- Floating prices grow when you zoom the camera out, so they stay readable. Zoomed in, they keep their normal size.
+
 ## 0.4.0
 
 - Sell in bulk: put things outside (where the game shows its bin icon), then sell them all from the shop's new "Items outside" panel. The money arrives straight away.

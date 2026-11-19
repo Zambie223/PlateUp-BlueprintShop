@@ -124,12 +124,31 @@ namespace BlueprintShop
         }
     }
 
-    /// <summary>Every machine: the floating text over a binned appliance ("45 coins" or "Needed").</summary>
+    /// <summary>
+    /// Every machine: the floating price over a binned appliance ("45 coin" or "Needed").
+    /// It sits above vanilla's bin icon (at 1.55 it was centred on it), is auto-sized to fit
+    /// within one tile so neighbouring labels never overlap, and reads against a dark rounded
+    /// backing instead of a thick outline.
+    /// </summary>
     public class SaleLabelView : UpdatableObjectView<SaleLabelData>
     {
-        private const float Height = 1.55f;
+        private const float Height = 2.25f;
+        /// <summary>World units; a tile is 1, so this leaves a gap between neighbours.</summary>
+        private const float MaxWidth = 0.8f;
+        private const float MaxHeight = 0.3f;
+        private static readonly Vector2 Padding = new Vector2(0.1f, 0.05f);
 
+        /// <summary>
+        /// Zoom compensation: the label keeps its world size while that's at least this many
+        /// pixels tall (at 1080p; scaled with the screen height), and grows when the camera
+        /// zooms out so it never gets smaller than this on screen.
+        /// </summary>
+        private const float MinScreenHeight1080 = 26f;
+        private const float MaxScale = 2.5f;
+
+        private Transform Root;
         private TextMeshPro Text;
+        private SpriteRenderer Backing;
         private Camera MainCamera;
 
         public override void Initialise()
@@ -152,17 +171,22 @@ namespace BlueprintShop
             }
             else
             {
-                Text.text = ShopTheme.HasCoinSprite ? $"{data.Refund} <sprite name=\"coin\">" : $"${data.Refund}";
+                // The coin sprite is a white shape; tint it like the shop window does.
+                Text.text = ShopTheme.HasCoinSprite ? $"{data.Refund}<sprite name=\"coin\" color=#FF9800>" : $"${data.Refund}";
                 Text.color = ShopTheme.Accent;
             }
+            FitBacking();
         }
 
         private void Build()
         {
-            var go = new GameObject("BlueprintShop Sale Label");
-            go.transform.SetParent(transform, false);
-            go.transform.localPosition = new Vector3(0f, Height, 0f);
-            Text = go.AddComponent<TextMeshPro>();
+            Root = new GameObject("BlueprintShop Sale Label").transform;
+            Root.SetParent(transform, false);
+            Root.localPosition = new Vector3(0f, Height, 0f);
+
+            var textGo = new GameObject("Text");
+            textGo.transform.SetParent(Root, false);
+            Text = textGo.AddComponent<TextMeshPro>();
             if (ShopTheme.Font != null)
             {
                 Text.font = ShopTheme.Font;
@@ -171,20 +195,43 @@ namespace BlueprintShop
             {
                 Text.spriteAsset = ShopTheme.Sprites;
             }
-            Text.fontSize = 4.5f;
+            Text.enableAutoSizing = true;
+            Text.fontSizeMin = 0.5f;
+            Text.fontSizeMax = 2.6f;
             Text.alignment = TextAlignmentOptions.Center;
             Text.enableWordWrapping = false;
+            Text.overflowMode = TextOverflowModes.Overflow;
             Text.richText = true;
-            Text.rectTransform.sizeDelta = new Vector2(3f, 1f);
-            Text.outlineWidth = 0.25f;
-            Text.outlineColor = new Color32(0x1A, 0x16, 0x13, 0xFF);
-            Text.sortingOrder = 100;
+            Text.rectTransform.sizeDelta = new Vector2(MaxWidth - Padding.x * 2f, MaxHeight - Padding.y * 2f);
+            Text.sortingOrder = 101;
+
+            // Dark rounded backing behind the text (TMP faces -Z, so +Z is behind it).
+            var backGo = new GameObject("Backing");
+            backGo.transform.SetParent(Root, false);
+            backGo.transform.localPosition = new Vector3(0f, 0f, 0.01f);
+            Backing = backGo.AddComponent<SpriteRenderer>();
+            Backing.sprite = ShopTheme.Rounded;
+            Backing.drawMode = SpriteDrawMode.Sliced;
+            Backing.color = new Color(0.1f, 0.086f, 0.075f, 0.85f);
+            Backing.sortingOrder = 100;
             Face();
+        }
+
+        /// <summary>Size the backing to the text actually drawn (auto-sizing shrinks long prices).</summary>
+        private void FitBacking()
+        {
+            Text.ForceMeshUpdate();
+            Vector2 drawn = Text.GetRenderedValues(false);
+            if (float.IsNaN(drawn.x) || drawn.x <= 0f)
+            {
+                drawn = Text.rectTransform.sizeDelta;
+            }
+            Backing.size = new Vector2(Mathf.Min(drawn.x, MaxWidth) + Padding.x * 2f, drawn.y + Padding.y * 2f);
         }
 
         private void LateUpdate()
         {
-            if (Text != null)
+            if (Root != null)
             {
                 Face();
             }
@@ -197,10 +244,31 @@ namespace BlueprintShop
             {
                 MainCamera = Camera.main;
             }
-            if (MainCamera != null)
+            if (MainCamera == null)
             {
-                Text.transform.rotation = MainCamera.transform.rotation;
+                return;
             }
+            Transform cam = MainCamera.transform;
+            Root.rotation = cam.rotation;
+
+            // Pixels per world unit at the label's depth.
+            float pixelsPerUnit;
+            if (MainCamera.orthographic)
+            {
+                pixelsPerUnit = Screen.height / (2f * Mathf.Max(0.01f, MainCamera.orthographicSize));
+            }
+            else
+            {
+                Vector3 anchor = transform.position + Vector3.up * Height;
+                float depth = Mathf.Max(0.1f, Vector3.Dot(anchor - cam.position, cam.forward));
+                pixelsPerUnit = Screen.height / (2f * depth * Mathf.Tan(MainCamera.fieldOfView * 0.5f * Mathf.Deg2Rad));
+            }
+            float baseHeight = Backing != null && Backing.size.y > 0f ? Backing.size.y : MaxHeight;
+            float minPixels = MinScreenHeight1080 * Screen.height / 1080f;
+            float scale = Mathf.Clamp(minPixels / Mathf.Max(0.001f, baseHeight * pixelsPerUnit), 1f, MaxScale);
+            Root.localScale = new Vector3(scale, scale, scale);
+            // Grow upwards, so a bigger label doesn't cover the bin icon below it.
+            Root.localPosition = new Vector3(0f, Height + (scale - 1f) * baseHeight * 0.5f, 0f);
         }
     }
 
