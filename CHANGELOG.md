@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.1
+
+- The shop's "Place items myself" tick box shows its label again. It had shrunk to just the tick.
+- While placing items yourself, the on-screen panel's "Left to place" now counts the item in your hands too.
+
 ## 0.5.0
 
 - New "Place items myself" tick box above the Purchase button. When it's ticked, appliances you buy are put straight into your hands one at a time instead of arriving as parcels, so you can set each one down where you want it. A panel at the bottom of the screen shows what's left, and your third-action button (Y / Triangle on a controller) swaps to the next kind of item. The shop can send whatever's left to the door as parcels. Parcels are still the default.

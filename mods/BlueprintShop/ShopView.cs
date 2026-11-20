@@ -1455,7 +1455,9 @@ namespace BlueprintShop
             // Items bought to place by hand that haven't been handed out yet.
             Image queue = Ui.Box(cartBg.transform, "Queue", ShopTheme.Card);
             QueueBox = queue.rectTransform;
-            Ui.Layout(QueueBox, minH: 104, prefH: 104, flexH: 0);
+            // flexW 1 here and on the Sell and Outside boxes: full column width, rather than
+            // whatever width their text happens to ask for (see the tick box below).
+            Ui.Layout(QueueBox, minH: 104, prefH: 104, flexW: 1, flexH: 0);
             Ui.Group<VerticalLayoutGroup>(QueueBox, 6, new RectOffset(10, 10, 8, 8)).childForceExpandWidth = true;
             QueueText = Ui.Text(QueueBox, "Text", "", 18);
             Ui.AutoSize(QueueText, 12);
@@ -1468,7 +1470,7 @@ namespace BlueprintShop
             // Sell what you're holding.
             Image sell = Ui.Box(cartBg.transform, "Sell", ShopTheme.Card);
             SellBox = sell.rectTransform;
-            Ui.Layout(SellBox, minH: 104, prefH: 104, flexH: 0);
+            Ui.Layout(SellBox, minH: 104, prefH: 104, flexW: 1, flexH: 0);
             Ui.Group<VerticalLayoutGroup>(SellBox, 6, new RectOffset(10, 10, 8, 8)).childForceExpandWidth = true;
             SellText = Ui.Text(SellBox, "Text", "", 18);
             Ui.AutoSize(SellText, 12);
@@ -1483,7 +1485,7 @@ namespace BlueprintShop
             // Sell everything bought that's been put outside (bin icon).
             Image outside = Ui.Box(cartBg.transform, "Outside", ShopTheme.Card);
             OutsideBox = outside.rectTransform;
-            Ui.Layout(OutsideBox, minH: 150, prefH: 150, flexH: 0);
+            Ui.Layout(OutsideBox, minH: 150, prefH: 150, flexW: 1, flexH: 0);
             Ui.Group<VerticalLayoutGroup>(OutsideBox, 6, new RectOffset(10, 10, 8, 8)).childForceExpandWidth = true;
             OutsideText = Ui.Text(OutsideBox, "Text", "", 18, TextAlignmentOptions.TopLeft);
             Ui.AutoSize(OutsideText, 12);
@@ -1522,7 +1524,10 @@ namespace BlueprintShop
             PlaceToggle.Hover = ShopTheme.Card;
             PlaceToggle.Label.alignment = TextAlignmentOptions.Left;
             Ui.Stretch(PlaceToggle.Label.rectTransform, 44, 6, 2, 2);
-            Ui.Layout(PlaceToggle.Rect, minH: 38, prefH: 38, flexH: 0);
+            // flexW 1: the cart column doesn't force-expand widths, and a plain box only asks
+            // for its sprite's width, so without it the tick box shrank to ~20 px and hid its
+            // label (0.5.0 bug, user screenshot).
+            Ui.Layout(PlaceToggle.Rect, minH: 38, prefH: 38, flexW: 1, flexH: 0);
             Image tickFrame = Ui.Box(PlaceToggle.Rect, "Tick", ShopTheme.TextDim);
             RectTransform frame = tickFrame.rectTransform;
             frame.anchorMin = frame.anchorMax = new Vector2(0f, 0.5f);

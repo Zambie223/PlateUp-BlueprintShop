@@ -126,12 +126,27 @@ namespace BlueprintShop
                 sb.Append("\n<color=#E05A47>Your hands are full. Put down what you're holding to get the next item.</color>");
             }
             int waitingTypes = Data.Waiting?.Count ?? 0;
-            if (waitingTypes > 0)
+            // Everything left to place, counting the one in the player's hands (user request
+            // after 0.5.0: "Still to place" leaving out the held item read one short).
+            var left = new List<OwnedCount>(Data.Waiting ?? new List<OwnedCount>());
+            if (Data.HeldID != 0)
             {
-                sb.Append("\n<color=#BFB2A3>Still to place:</color> ");
-                for (int i = 0; i < waitingTypes; i++)
+                int at = left.FindIndex(c => c.ID == Data.HeldID);
+                if (at >= 0)
                 {
-                    OwnedCount c = Data.Waiting[i];
+                    left[at] = new OwnedCount { ID = Data.HeldID, Count = left[at].Count + 1 };
+                }
+                else
+                {
+                    left.Insert(0, new OwnedCount { ID = Data.HeldID, Count = 1 });
+                }
+            }
+            if (left.Count > 0)
+            {
+                sb.Append("\n<color=#BFB2A3>Left to place:</color> ");
+                for (int i = 0; i < left.Count; i++)
+                {
+                    OwnedCount c = left[i];
                     sb.Append(i == 0 ? "" : ", ").Append(Name(c.ID));
                     if (c.Count > 1)
                     {
