@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.0
+
+- Placing items yourself: hold your third-action button (Y / Triangle on a controller) for a second and a half to take back the item you placed last. What you're holding goes back on the list. Hold again to keep going back. The panel at the bottom of the screen shows which item that would be, and how far along the hold is.
+- A tap of the third-action button still swaps to the next kind of item. It now happens when you let go of the button instead of when you press it.
+- All players in an online game need 0.6.0; it can't be mixed with 0.5.x.
+
 ## 0.5.2
 
 - With **Roll to unlock upgrades** on, the shop keeps showing which night upgrades unlocked on. Before, the line under the title went blank after the night they unlocked.

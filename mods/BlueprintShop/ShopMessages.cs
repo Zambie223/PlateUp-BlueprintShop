@@ -170,11 +170,16 @@ namespace BlueprintShop
         public bool HandsBusy;
         /// <summary>Waiting items per appliance ID, in purchase order.</summary>
         public List<OwnedCount> Waiting;
+        /// <summary>Appliance ID that holding the third action would take back (undo), or 0.</summary>
+        public int UndoID;
+        /// <summary>How far that hold has got, 0 to 100 (steps of 10).</summary>
+        public int UndoProgress;
 
         public bool IsChangedFrom(BuildQueueData check)
         {
             if (PlayerID != check.PlayerID || InputSource != check.InputSource || HeldID != check.HeldID
-                || HandsBusy != check.HandsBusy || (Waiting?.Count ?? 0) != (check.Waiting?.Count ?? 0))
+                || HandsBusy != check.HandsBusy || UndoID != check.UndoID || UndoProgress != check.UndoProgress
+                || (Waiting?.Count ?? 0) != (check.Waiting?.Count ?? 0))
             {
                 return true;
             }
@@ -215,10 +220,11 @@ namespace BlueprintShop
     /// </summary>
     internal static class ShopSerializer
     {
-        private const int FormatVersion = 4;
+        // 5 (0.6.0): build queue gained UndoID and UndoProgress.
+        private const int FormatVersion = 5;
         private const int ViewFields = 27;
         private const int LabelFields = 3;
-        private const int QueueFields = 6;
+        private const int QueueFields = 8;
         private const int MaxEntries = 4096;
         private const int MaxLines = 512;
         private const int MaxStatusLength = 512;
@@ -297,6 +303,8 @@ namespace BlueprintShop
                 writer.Write(d.Waiting[i].ID);
                 writer.Write(d.Waiting[i].Count);
             }
+            writer.Write(d.UndoID);
+            writer.Write(d.UndoProgress);
         }
 
         public static BuildQueueData ReadQueue(ref MessagePackReader reader)
@@ -323,6 +331,8 @@ namespace BlueprintShop
             {
                 d.Waiting.Add(new OwnedCount { ID = reader.ReadInt32(), Count = reader.ReadInt32() });
             }
+            d.UndoID = reader.ReadInt32();
+            d.UndoProgress = reader.ReadInt32();
             return d;
         }
 

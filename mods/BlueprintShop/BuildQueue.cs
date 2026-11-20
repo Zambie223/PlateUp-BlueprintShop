@@ -17,8 +17,13 @@ namespace BlueprintShop
     /// door, reachable tiles, the build-mode crane, auto-facing) applies untouched, and the
     /// next item arrives once their hands are empty.
     ///
-    /// The third-action button (SecondaryAction1 / Interact3) swaps the held item for the next
-    /// type in the queue. "Send the rest to the door" in the shop turns what's left into normal
+    /// The third-action button (SecondaryAction1 / Interact3): a tap swaps the held item for
+    /// the next type in the queue; holding it for UndoHoldSeconds takes back the item placed
+    /// last (undo, repeatable in reverse order; user's choice 2026-11-19, "a second or two").
+    /// The undo puts the held item back in the queue and picks the placed one up the way
+    /// vanilla's PickUpAndDropAppliance.PerformPickUp does. Once everything is placed the
+    /// queue ends and the hands are free, so vanilla Grab covers that case.
+    /// "Send the rest to the door" in the shop turns what's left into normal
     /// parcels, as does a player leaving. While anything is queued, the queue's view entity
     /// carries vanilla's CPreventStartDayPost, so the day can't start with paid items unplaced
     /// (vanilla already refuses while an appliance is being carried).
@@ -50,10 +55,24 @@ namespace BlueprintShop
             public int HeldPrice;
             /// <summary>Last type handed out: the next item is the same type while any are left.</summary>
             public int LastID;
+            /// <summary>Queued items this player has set down, oldest first (the undo stack).</summary>
+            public readonly List<Entity> Placed = new List<Entity>();
             public bool CycleWasDown;
+            /// <summary>When the third-action button went down (Time.unscaledTime).</summary>
+            public float HoldStart;
+            /// <summary>This press already undid (or was cancelled), so letting go doesn't cycle.</summary>
+            public bool HoldUsed;
+            /// <summary>How far the undo hold has got, 0 to 100 in steps of 10, for the panel.</summary>
+            public int UndoProgress;
             public bool HandsBusy;
             public bool BlockingDay;
         }
+
+        /// <summary>How long to hold the third-action button to take back the last placed item.</summary>
+        public const float UndoHoldSeconds = 1.5f;
+        /// <summary>Holds shorter than this are taps: no progress shown yet.</summary>
+        private const float UndoProgressDelay = 0.2f;
+        private const int MaxPlaced = 512;
 
         private readonly Dictionary<Entity, Queue> Queues = new Dictionary<Entity, Queue>();
         private readonly List<Entity> Finished = new List<Entity>();
@@ -139,6 +158,13 @@ namespace BlueprintShop
             return sent;
         }
 
+        /// <summary>For the panel: the appliance a held third action would take back now, or 0.</summary>
+        internal int UndoApplianceId(Queue q)
+        {
+            Entity e = PeekUndo(q);
+            return e != Entity.Null && HandsAllowUndo(q, out _) && Require(e, out CAppliance a) ? a.ID : 0;
+        }
+
         internal Queue Get(Entity view)
         {
             foreach (Queue q in Queues.Values)
@@ -180,8 +206,12 @@ namespace BlueprintShop
                 TrackHeld(q);
                 if (night)
                 {
-                    HandleCycle(q);
+                    HandleThirdAction(q);
                     HandOut(q);
+                }
+                else
+                {
+                    q.UndoProgress = 0;
                 }
                 if (q.Items.Count == 0 && q.Held == Entity.Null)
                 {
@@ -213,23 +243,172 @@ namespace BlueprintShop
             }
             if (!EntityManager.Exists(q.Held) || !Require(q.Held, out CHeldBy by) || by.Holder != q.Player)
             {
+                if (IsPlaced(q.Held))
+                {
+                    q.Placed.Remove(q.Held);
+                    q.Placed.Add(q.Held);
+                    if (q.Placed.Count > MaxPlaced)
+                    {
+                        q.Placed.RemoveAt(0);
+                    }
+                }
                 q.Held = Entity.Null;
                 q.HeldID = 0;
                 q.HeldPrice = 0;
             }
         }
 
-        private void HandleCycle(Queue q)
+        /// <summary>An appliance standing somewhere in the world (not held, not hidden, not sold).</summary>
+        private bool IsPlaced(Entity e)
         {
+            return e != Entity.Null && EntityManager.Exists(e) && Has<CAppliance>(e)
+                && !Has<CHeldBy>(e) && !Has<CHeldAppliance>(e)
+                && Require(e, out CPosition pos) && pos.Position.y > -100f; // CPosition.Hidden is y -1000
+        }
+
+        /// <summary>The item an undo would take back now (dropping stale entries), or Entity.Null.</summary>
+        private Entity PeekUndo(Queue q)
+        {
+            while (q.Placed.Count > 0)
+            {
+                Entity e = q.Placed[q.Placed.Count - 1];
+                if (IsPlaced(e) && !Has<CImmovable>(e))
+                {
+                    return e;
+                }
+                q.Placed.RemoveAt(q.Placed.Count - 1);
+            }
+            return Entity.Null;
+        }
+
+        /// <summary>Undo needs free hands, or hands holding this queue's own item (which goes back in the queue).</summary>
+        private bool HandsAllowUndo(Queue q, out bool holdingQueued)
+        {
+            holdingQueued = false;
+            if (!Require(q.Player, out CItemHolder holder))
+            {
+                return false;
+            }
+            if (holder.HeldItem == Entity.Null || !EntityManager.Exists(holder.HeldItem))
+            {
+                return true;
+            }
+            holdingQueued = q.Held != Entity.Null && holder.HeldItem == q.Held;
+            return holdingQueued;
+        }
+
+        /// <summary>
+        /// Third action: a tap (let go before the undo hold completes) cycles the held type;
+        /// holding it for UndoHoldSeconds takes back the last placed item.
+        /// </summary>
+        private void HandleThirdAction(Queue q)
+        {
+            bool valid = Require(q.Player, out CInputData input) && !input.IsCaptured && !input.IsDisconnected;
             bool down = false;
-            if (Require(q.Player, out CInputData input) && !input.IsCaptured && !input.IsDisconnected)
+            if (valid)
             {
                 ButtonState b = input.State.SecondaryAction1;
                 down = b == ButtonState.Pressed || b == ButtonState.Held;
             }
-            bool pressed = down && !q.CycleWasDown;
+            else
+            {
+                // A menu took the input mid-press: don't act when it comes back up.
+                q.HoldUsed = true;
+            }
+            float now = UnityEngine.Time.unscaledTime; // real time: the hold works the same paused or not
+            if (down && !q.CycleWasDown)
+            {
+                q.HoldStart = now;
+                q.HoldUsed = false;
+            }
+            bool released = !down && q.CycleWasDown;
             q.CycleWasDown = down;
-            if (!pressed || q.Held == Entity.Null || !Has<CAppliance>(q.Held)
+            q.UndoProgress = 0;
+
+            if (down && !q.HoldUsed)
+            {
+                float held = now - q.HoldStart;
+                if (held >= UndoHoldSeconds)
+                {
+                    q.HoldUsed = true; // a long hold never cycles, even with nothing to undo
+                    Undo(q);
+                }
+                else if (held >= UndoProgressDelay && PeekUndo(q) != Entity.Null && HandsAllowUndo(q, out _))
+                {
+                    q.UndoProgress = Mathf.Clamp((int)(held / UndoHoldSeconds * 10f) * 10, 0, 90);
+                }
+            }
+            if (released && !q.HoldUsed)
+            {
+                Cycle(q);
+            }
+        }
+
+        /// <summary>
+        /// Puts the held queued item back in the queue and picks up the last placed one, the
+        /// same way vanilla picks up an appliance (PickUpAndDropAppliance.PerformPickUp and
+        /// its AfterRun).
+        /// </summary>
+        private void Undo(Queue q)
+        {
+            Entity target = PeekUndo(q);
+            if (target == Entity.Null || !HandsAllowUndo(q, out bool holdingQueued)
+                || !Require(target, out CAppliance appliance) || !Require(target, out CPosition pos))
+            {
+                return;
+            }
+            q.Placed.RemoveAt(q.Placed.Count - 1);
+            if (holdingQueued)
+            {
+                q.Items.Insert(0, new QueuedItem { ApplianceID = q.HeldID, Price = q.HeldPrice });
+                EntityManager.SetComponentData(q.Player, new CItemHolder { HeldItem = Entity.Null });
+                EntityManager.DestroyEntity(q.Held);
+                q.Held = Entity.Null;
+            }
+
+            TileManager tiles = TileManager;
+            if (tiles != null && tiles.GetOccupant(pos.Position, appliance.Layer) == target)
+            {
+                tiles.SetOccupant(pos.Position, Entity.Null, appliance.Layer);
+            }
+            if (!Has<CHeldAppliance>(target))
+            {
+                EntityManager.AddComponent<CHeldAppliance>(target);
+            }
+            if (!Has<CRemoveView>(target))
+            {
+                EntityManager.AddComponent<CRemoveView>(target);
+            }
+            if (Has<CHeldBy>(target))
+            {
+                EntityManager.SetComponentData(target, new CHeldBy { Holder = q.Player });
+            }
+            else
+            {
+                EntityManager.AddComponentData(target, new CHeldBy { Holder = q.Player });
+            }
+            EntityManager.SetComponentData(target, new CRequiresView { Type = ViewType.HeldAppliance });
+            EntityManager.SetComponentData(target, CPosition.Hidden);
+            EntityManager.SetComponentData(q.Player, new CItemHolder { HeldItem = target });
+
+            q.Held = target;
+            q.HeldID = appliance.ID;
+            q.HeldPrice = Require(target, out CPaidPrice paid) ? paid.Price : 0;
+            q.LastID = appliance.ID;
+            UpdateDayBlock(q);
+            RequestWarningRecalculation();
+            if (!Has<SPerformTableUpdate>())
+            {
+                EntityManager.CreateEntity(typeof(SPerformTableUpdate));
+            }
+            CSoundEvent.Create(EntityManager, KitchenData.SoundEvent.PlayerItemPickUp);
+            ShopLog.Debug(() => $"Build queue (player {q.PlayerID}): took back {appliance.ID} ({q.Placed.Count} more to undo)");
+        }
+
+        /// <summary>Swaps the held queued item for the next type in the queue.</summary>
+        private void Cycle(Queue q)
+        {
+            if (q.Held == Entity.Null || !Has<CAppliance>(q.Held)
                 || !Require(q.Player, out CItemHolder holder) || holder.HeldItem != q.Held)
             {
                 return;
@@ -409,6 +588,8 @@ namespace BlueprintShop
                 {
                     data.HeldID = q.Held != Entity.Null ? q.HeldID : 0;
                     data.HandsBusy = q.HandsBusy;
+                    data.UndoID = Queues.UndoApplianceId(q);
+                    data.UndoProgress = data.UndoID != 0 ? q.UndoProgress : 0;
                     Counts.Clear();
                     foreach (BuildQueueSystem.QueuedItem item in q.Items)
                     {

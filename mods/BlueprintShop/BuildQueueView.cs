@@ -172,6 +172,13 @@ namespace BlueprintShop
                 hints.Add("the shop can send the rest to the door");
             }
             sb.Append("\n<size=80%><color=#BFB2A3>").Append(string.Join("  •  ", hints)).Append("</color></size>");
+            // Undo (hold the third action): its own line, so the hint line doesn't get too wide.
+            if (Data.UndoID != 0)
+            {
+                sb.Append(Data.UndoProgress > 0
+                    ? $"\n<size=80%><color=#FF9800>Taking back {Name(Data.UndoID)}... {Data.UndoProgress}%</color></size>"
+                    : $"\n<size=80%><color=#BFB2A3>Hold {ButtonName(Data.PlayerID)}: take back {Name(Data.UndoID)}</color></size>");
+            }
             Text.text = sb.ToString();
         }
 
