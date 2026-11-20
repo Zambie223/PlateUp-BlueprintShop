@@ -204,6 +204,32 @@ namespace BlueprintShop
                     ["set"] = (Action<int>)(v => ShopSettings.CursorSpeedPercent = v),
                 },
 
+                Heading("Wishlists"),
+                new Dictionary<string, object>
+                {
+                    ["id"] = "wishlists_export",
+                    ["type"] = "button",
+                    ["label"] = "Export wishlists",
+                    ["description"] = "Copies all your wishlists to the clipboard as text, to back them up or send to a friend.",
+                    ["action"] = (Action)Wishlists.ExportToClipboard,
+                },
+                new Dictionary<string, object>
+                {
+                    ["id"] = "wishlists_import",
+                    ["type"] = "button",
+                    ["label"] = "Import wishlists",
+                    ["description"] = "Adds the wishlists copied to the clipboard to yours. A list whose name you already use gets a number added.",
+                    ["action"] = (Action)Wishlists.ImportFromClipboard,
+                },
+                // What the last export or import did. Mod List buttons can't change their text,
+                // so each outcome is its own dimmed line, shown by "visible" until the page closes.
+                WishResult("wishlists_exported", "Copied to the clipboard", Wishlists.IoResult.Exported),
+                WishResult("wishlists_nothing_to_export", "No wishlists to export yet", Wishlists.IoResult.NothingToExport),
+                WishResult("wishlists_imported", "Imported from the clipboard", Wishlists.IoResult.Imported),
+                WishResult("wishlists_nothing_new", "You already have those lists", Wishlists.IoResult.ImportedNothingNew),
+                WishResult("wishlists_nothing_to_import", "No wishlists in the clipboard", Wishlists.IoResult.NothingToImport),
+                WishResult("wishlists_failed", "That didn't work: see Player.log", Wishlists.IoResult.Failed),
+
                 Heading("Troubleshooting"),
                 new Dictionary<string, object>
                 {
@@ -241,7 +267,18 @@ namespace BlueprintShop
         public static void OnOptionsClosed()
         {
             ShopSettings.Save();
+            Wishlists.LastResult = Wishlists.IoResult.None;
         }
+
+        private static Dictionary<string, object> WishResult(string id, string label, Wishlists.IoResult result) => new Dictionary<string, object>
+        {
+            ["id"] = id,
+            ["type"] = "button",
+            ["label"] = label,
+            ["action"] = (Action)(() => { }),
+            ["enabled"] = false,
+            ["visible"] = (Func<bool>)(() => Wishlists.LastResult == result),
+        };
 
         private static Dictionary<string, object> Heading(string label) => new Dictionary<string, object>
         {

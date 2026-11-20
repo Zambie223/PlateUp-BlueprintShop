@@ -83,6 +83,7 @@ namespace BlueprintShop
                 }
                 ShopService.SessionStatus status = Service.GetStatus(entities[i]);
                 ShopService.HeldInfo held = Service.GetHeld(sessions[i].Player);
+                (int areaSequence, List<OwnedCount> areaItems) = Service.GetAreaResult(entities[i]);
                 SendUpdate(views[i], new ShopViewData
                 {
                     OwnerPlayerID = sessions[i].PlayerID,
@@ -110,7 +111,9 @@ namespace BlueprintShop
                     UpgradeState = ctx.UpgradeState,
                     UpgradeNight = ctx.UpgradeNight,
                     UpgradeChanceTonight = UnityEngine.Mathf.RoundToInt(ctx.UpgradeChanceTonight * 1000f),
-                    UpgradeChanceNext = UnityEngine.Mathf.RoundToInt(ctx.UpgradeChanceNext * 1000f)
+                    UpgradeChanceNext = UnityEngine.Mathf.RoundToInt(ctx.UpgradeChanceNext * 1000f),
+                    AreaSequence = areaSequence,
+                    AreaItems = areaItems
                 });
             }
         }

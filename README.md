@@ -32,6 +32,9 @@ Blueprint Shop works fine on its own, but installing [Mod List](https://github.c
 - **Searching:** type in the search box above the tabs (click it, or press Ctrl+F). On a controller, selecting the search box opens an on-screen keyboard.
 - **Buying:** add items to your cart and press **Purchase**. Paid items arrive as parcels on the letter tiles by the door, like your starting appliances. The top right shows your balance and what you'll have left after the cart. Your cart is remembered if you close the menu, until the day starts.
 - **Placing items yourself:** tick **Place items myself** above the Purchase button, and appliances skip the parcels. When you close the shop, the first one is put in your hands. Set it down with Grab, as you would when moving any appliance, and the next one appears. A panel at the bottom of the screen shows what you're holding and what's left. Tap your third-action button (Y / Triangle on a controller, or whatever you've bound it to) to swap to the next kind of item. Hold it for a second and a half to take back the item you placed last: what you're holding goes back on the list, and the placed item goes back in your hands. Hold it again to take back the one before that, and so on. Rotate items after placing them, as usual. If you change your mind, the shop's **Send them to the door instead** button turns whatever's left into normal parcels. The day can't start until everything has been placed or sent to the door. The tick box is remembered until you close the game; the **Place items myself** [setting](#settings) decides whether it starts ticked. Decorations are still delivered inside, as usual.
+- **Copying from the floor:** press **Copy from floor** in the cart to add everything standing in an area to your cart, for example to build a second copy of a cooking line. The shop hides, and you draw a box over the floor: drag with the mouse, or on a controller move the cursor to one corner, press Interact, move to the opposite corner and press Interact again. The selected tiles light up, and a panel counts what's in them as you go. Esc, right-click or Back returns to the shop without copying.
+- **Wishlists:** press **Wishlists** in the cart to save what's in your cart as a named list, and to add a saved list back to the cart on any night, in any run. Lists are kept on your computer, not in the run's save. A list can be replaced with the current cart, or deleted (both ask you to click twice). The [settings](#settings) can export your lists to the clipboard, to back them up or send them to a friend, and import lists from it.
+- **Copied items and wishlists** are added on top of what's already in your cart. Anything that can't be bought tonight is left out, and the shop lists what was skipped and why: for example, upgrades that are still locked, decorations on a normal night, items the game never sells as blueprints, or a second "only one allowed" item.
 - **Blueprints:** each item also has a **Blueprint** button. It drops a normal, unpaid blueprint outside, for a blueprint cabinet or a research, copying or discount desk.
 - **Selling:** pick up an appliance (or an unopened parcel), open the shop, and use **Sell** at the top of the cart. You get back exactly what you paid for it: the discounted price if you bought it on discount, and nothing for things you got for free (starting kit, card rewards). The **Sale loss** [setting](#settings) can make selling give back less. The button asks you to click twice, because selling removes the appliance.
 - **Selling in bulk:** put everything you want to sell outside, where the game shows its bin icon. Each item you bought through the shop gets a floating price showing its refund. The shop then lists those items under **Items outside**, and one button (click twice) sells them all at once. The money is yours straight away, so you can spend it the same night. Anything you bought and forget to sell is refunded automatically at the start of the next day, instead of being thrown away for nothing (a [setting](#settings) turns this off). Free items aren't included; the game throws them away as usual.
@@ -51,6 +54,8 @@ Blueprint Shop works fine on its own, but installing [Mod List](https://github.c
 | Close | Esc (first Esc leaves the search box) | Back or Start (first press closes the keyboard) |
 | Next item to place (outside the shop) | Tap your third-action key | Tap Y / Triangle (your third-action button) |
 | Take back the last placed item | Hold your third-action key for 1.5 seconds | Hold Y / Triangle for 1.5 seconds |
+| Copy from floor: draw the box | Drag with the left mouse button | Move the cursor, press Interact on one corner and again on the other |
+| Copy from floor: cancel | Esc or right-click | Back (the first press only drops the first corner) |
 
 Your chef stands still while the menu is open. Other players keep playing. In local co-op, each player who opens the shop gets their own half or quarter of the screen.
 
@@ -91,6 +96,9 @@ Settings marked *host* are about how the game plays. In online games, only the h
 | Floating sale prices | `show_sale_labels` | `true` | Shows the refund prices above bought items outside. |
 | Shop menu aim assist | `shop_aim_assist` | `Normal` | Controllers only: how strongly the shop menu's cursor snaps to nearby buttons (`Off`, `Low`, `Normal` or `High`). It doesn't affect gameplay. |
 | Shop menu cursor speed | `shop_cursor_speed_percent` | `100` | Controllers only: how fast the shop menu's cursor moves, from 50% to 200%. |
+| **Wishlists** (in game only) | | | |
+| Export wishlists | | | Copies all your wishlists to the clipboard as text. |
+| Import wishlists | | | Adds the wishlists in the clipboard to yours. If you already have a list with the same name and different items, the new one gets a number added. |
 | **Troubleshooting** | | | |
 | Verbose logging | `verbose` | `false` | See [Troubleshooting](#troubleshooting). |
 | Prepare to uninstall (host) | `prepare_uninstall` | `false` | See [Saves and uninstalling](#saves-and-uninstalling). |
@@ -124,6 +132,8 @@ Verbose logging is off by default. To turn it on, do any of these:
 - Turn on **Verbose logging** in the in-game [settings](#settings).
 - Add the launch option `-blueprintshop-verbose` (Steam → PlateUp → Properties → Launch Options). This overrides the setting.
 - Set `verbose=true` in `BlueprintShop.cfg`. The mod creates this file on first run, next to the game's log at `%USERPROFILE%\AppData\LocalLow\It's Happening\PlateUp\`.
+
+Wishlists are saved in `BlueprintShop-wishlists.txt` in the same folder. It's plain text, in the same format the export puts on the clipboard, so you can also back it up or copy it to another computer.
 
 If the menu text ever shows up as symbols, add `font=<name>` to `BlueprintShop.cfg`. With verbose logging on, the log lists every font name the game has loaded.
 

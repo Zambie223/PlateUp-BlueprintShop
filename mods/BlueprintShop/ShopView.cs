@@ -23,7 +23,7 @@ namespace BlueprintShop
     /// use the mouse (and can type to search); controller players get a stick-driven cursor that
     /// snaps to nearby buttons, plus an on-screen QWERTY keyboard for search.
     /// </summary>
-    public class ShopView : ResponsiveObjectView<ShopViewData, ShopResponseData>, IInputConsumer
+    public partial class ShopView : ResponsiveObjectView<ShopViewData, ShopResponseData>, IInputConsumer
     {
         // ================================================================= categories
 
@@ -426,6 +426,13 @@ namespace BlueprintShop
                 return;
             }
 
+            // Copy from the floor: the menu is hidden while the box is drawn (ShopViewExtras).
+            if (AreaMode)
+            {
+                TickArea(input);
+                return;
+            }
+
             // ---- typing (keyboard players)
             if (SearchFocused)
             {
@@ -434,15 +441,27 @@ namespace BlueprintShop
                     return; // Esc while typing only leaves the search box
                 }
             }
-            else if (UsesMouse && Keyboard.current != null && Keyboard.current.ctrlKey.isPressed && Keyboard.current.fKey.wasPressedThisFrame)
+            else if (UsesMouse && !WishOpen && Keyboard.current != null && Keyboard.current.ctrlKey.isPressed && Keyboard.current.fKey.wasPressedThisFrame)
             {
+                Typing = TextTarget.Search;
                 SetSearchFocus(true);
             }
-            // Ctrl+A clears the search, typing or not. (While typing, Ctrl+A arrives as a control
-            // character, which OnTextInput already ignores, so no "a" is added.)
+            // Ctrl+A clears the search (or the wishlist name being typed), typing or not. (While
+            // typing, Ctrl+A arrives as a control character, which OnTextInput already ignores,
+            // so no "a" is added.)
             if (UsesMouse && Keyboard.current != null && Keyboard.current.ctrlKey.isPressed && Keyboard.current.aKey.wasPressedThisFrame)
             {
-                SetSearch("");
+                if (WishOpen)
+                {
+                    if (Typing == TextTarget.WishName)
+                    {
+                        ClearText();
+                    }
+                }
+                else
+                {
+                    SetSearch("");
+                }
             }
 
             if (FilterDirty)
@@ -493,13 +512,13 @@ namespace BlueprintShop
                 // Controller equivalent of Ctrl+A: SecondaryAction1 (Interact3; Y / Triangle by
                 // default on PC, follows rebinding) clears the search. Skipped if that button is
                 // also bound to a select action, so one press never both clicks and clears.
-                if (IsPressed(input.SecondaryAction1) && !click)
+                if (IsPressed(input.SecondaryAction1) && !click && !WishOpen)
                 {
                     SetSearch("");
                 }
 
                 // Edge scrolling for the stick.
-                if (!OskOpen)
+                if (!OskOpen && !WishOpen)
                 {
                     Rect grid = ScreenRect(GridViewport);
                     if (grid.Contains(pointer))
@@ -523,6 +542,10 @@ namespace BlueprintShop
                 {
                     SetOsk(false);
                 }
+                else if (WishOpen)
+                {
+                    SetWishOpen(false); // back to the shop, not out of it
+                }
                 else
                 {
                     RequestClose();
@@ -530,7 +553,7 @@ namespace BlueprintShop
                 }
             }
 
-            if (wheel != 0f && !OskOpen)
+            if (wheel != 0f && !OskOpen && !WishOpen)
             {
                 if (RectTransformUtility.RectangleContainsScreenPoint(CartViewport, pointer, null))
                 {
@@ -568,26 +591,34 @@ namespace BlueprintShop
 
             if (click)
             {
-                if (SearchFocused && hovered != SearchBox)
+                // Clicking anywhere but the box being typed in stops typing.
+                if (SearchFocused && hovered != (Typing == TextTarget.WishName ? WishNameBox : SearchBox))
                 {
                     SetSearchFocus(false);
                 }
                 if (hovered != null && hovered.Interactable)
                 {
                     hovered.OnClick?.Invoke();
-                    if (ClosedLocally || !Built)
+                    if (ClosedLocally || !Built || AreaMode)
                     {
                         return;
                     }
                 }
             }
-            if (rightClick && hovered == SearchBox)
+            if (rightClick && hovered == SearchBox && !WishOpen)
             {
                 // Right-clicking the box starts a fresh search (user request).
+                Typing = TextTarget.Search;
                 SetSearch("");
                 SetSearchFocus(true);
             }
-            else if (rightClick && !OskOpen)
+            else if (rightClick && hovered == WishNameBox && WishOpen)
+            {
+                Typing = TextTarget.WishName;
+                ClearText();
+                SetSearchFocus(true);
+            }
+            else if (rightClick && !OskOpen && !WishOpen)
             {
                 Card card = CardAt(pointer);
                 if (card != null)
@@ -608,6 +639,7 @@ namespace BlueprintShop
             }
 
             UpdateSearchLabel();
+            UpdateWishNameLabel();
             UpdateTooltip(pointer);
             UpdateCursorImage(pointer);
             LoadSomeIcons();
@@ -618,6 +650,11 @@ namespace BlueprintShop
             if (OskOpen)
             {
                 yield return OskButtons;
+                yield break;
+            }
+            if (WishOpen)
+            {
+                yield return WishButtons;
                 yield break;
             }
             yield return StaticButtons;
@@ -730,7 +767,7 @@ namespace BlueprintShop
             Keyboard kb = Keyboard.current;
             while (TypedChars.Count > 0)
             {
-                AppendSearch(TypedChars.Dequeue().ToString());
+                AppendText(TypedChars.Dequeue().ToString());
             }
             if (kb == null)
             {
@@ -738,11 +775,15 @@ namespace BlueprintShop
             }
             if (kb.backspaceKey.wasPressedThisFrame)
             {
-                BackspaceSearch();
+                BackspaceText();
             }
             if (kb.enterKey.wasPressedThisFrame || kb.numpadEnterKey.wasPressedThisFrame)
             {
                 SetSearchFocus(false);
+                if (Typing == TextTarget.WishName && WishOpen)
+                {
+                    SaveCartAsWishlist(); // Enter in the name box saves
+                }
             }
             if (kb.escapeKey.wasPressedThisFrame)
             {
@@ -1327,7 +1368,9 @@ namespace BlueprintShop
             Ui.AutoSize(HintText, 12);
             Ui.Layout(HintText, prefH: 26);
 
+            BuildWishPanel();
             BuildOsk();
+            BuildAreaHud();
 
             // Tooltip and controller cursor live on the canvas so nothing clips them.
             Image tooltipBg = Ui.Box(CanvasRoot.transform, "Tooltip", new Color32(0x1E, 0x1A, 0x17, 0xF8));
@@ -1418,6 +1461,7 @@ namespace BlueprintShop
 
         private void OnSearchBoxClicked()
         {
+            Typing = TextTarget.Search;
             if (UsesMouse)
             {
                 SetSearchFocus(true);
@@ -1430,7 +1474,7 @@ namespace BlueprintShop
 
         private void UpdateSearchLabel()
         {
-            bool active = SearchFocused || OskOpen;
+            bool active = (SearchFocused || OskOpen) && Typing == TextTarget.Search;
             string caret = active && (Time.unscaledTime % 1f) < 0.5f ? "|" : "";
             if (Search.Length == 0)
             {
@@ -1518,6 +1562,17 @@ namespace BlueprintShop
             Ui.AutoSize(StatusText, 13);
             Ui.Layout(StatusText, prefH: 70, flexH: 0);
 
+            // Fill the cart in one go: copy what's on a box of tiles, or a saved wishlist.
+            RectTransform fillRow = Ui.Rect("FillRow", cartBg.transform);
+            Ui.Layout(fillRow, minH: 40, prefH: 40, flexW: 1, flexH: 0);
+            Ui.Group<HorizontalLayoutGroup>(fillRow, 8, null).childForceExpandHeight = true;
+            UiButton copyFloor = Ui.Button(fillRow, "CopyFloor", "Copy from floor", 18, StartAreaMode);
+            Ui.Layout(copyFloor.Rect, flexW: 1);
+            UiButton wishlists = Ui.Button(fillRow, "Wishlists", "Wishlists", 18, () => SetWishOpen(true));
+            Ui.Layout(wishlists.Rect, flexW: 1);
+            StaticButtons.Add(copyFloor);
+            StaticButtons.Add(wishlists);
+
             // "Place items myself": a tick box. Off (parcels by the door) is the default.
             PlaceToggle = Ui.Button(cartBg.transform, "PlaceToggle", "Place items myself", 19, TogglePlaceMyself);
             PlaceToggle.Normal = ShopTheme.PanelInner;
@@ -1575,7 +1630,8 @@ namespace BlueprintShop
                 foreach (char c in keys)
                 {
                     string s = c.ToString();
-                    UiButton key = Ui.Button(row, "Key " + s, s, 24, () => AppendSearch(s.ToLowerInvariant()));
+                    // Search is lower case; list names keep the keyboard's capitals.
+                    UiButton key = Ui.Button(row, "Key " + s, s, 24, () => AppendText(Typing == TextTarget.Search ? s.ToLowerInvariant() : s));
                     Ui.Layout(key.Rect, minW: 58, prefW: 58, minH: 52, prefH: 52);
                     OskButtons.Add(key);
                 }
@@ -1584,9 +1640,9 @@ namespace BlueprintShop
             Ui.Group<HorizontalLayoutGroup>(bottom, 6, null, TextAnchor.MiddleCenter);
             foreach ((string label, float width, Action act) in new (string, float, Action)[]
             {
-                ("Space", 220f, () => AppendSearch(" ")),
-                ("Back", 110f, BackspaceSearch),
-                ("Clear", 110f, () => SetSearch("")),
+                ("Space", 220f, () => AppendText(" ")),
+                ("Back", 110f, BackspaceText),
+                ("Clear", 110f, ClearText),
                 ("Done", 130f, () => SetOsk(false))
             })
             {
@@ -2143,7 +2199,7 @@ namespace BlueprintShop
         private void UpdateTooltip(Vector2 pointer)
         {
             ShopEntry? hovered = null;
-            if (!OskOpen)
+            if (!OskOpen && !WishOpen)
             {
                 Card card = CardAt(pointer);
                 if (card != null)

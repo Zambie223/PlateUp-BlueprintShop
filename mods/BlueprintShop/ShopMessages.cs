@@ -48,7 +48,13 @@ namespace BlueprintShop
         /// instead of parcels. Same lines as Purchase.</summary>
         PurchaseToHands = 6,
         /// <summary>Send the owner's items still waiting in the build queue to the door as parcels.</summary>
-        QueueToDoor = 7
+        QueueToDoor = 7,
+        /// <summary>
+        /// Count the appliances standing in a box of tiles ("copy from the floor"). Two lines:
+        /// ID/Quantity are the x/z of one corner, then of the other. The answer comes back in
+        /// ShopViewData.AreaSequence/AreaItems; it changes nothing on the host.
+        /// </summary>
+        ScanArea = 8
     }
 
     /// <summary>Outside items of one kind: how many will sell (and for how much), how many are kept.</summary>
@@ -130,6 +136,11 @@ namespace BlueprintShop
         /// <summary>Roll mode: tonight's and next night's unlock chance, in tenths of a percent.</summary>
         public int UpgradeChanceTonight;
         public int UpgradeChanceNext;
+        // v6
+        /// <summary>The ScanArea request the AreaItems answer (0 = none yet).</summary>
+        public int AreaSequence;
+        /// <summary>Appliances standing in that box of tiles, per appliance ID.</summary>
+        public List<OwnedCount> AreaItems;
 
         public bool IsChangedFrom(ShopViewData check)
         {
@@ -155,7 +166,9 @@ namespace BlueprintShop
                 || UpgradeState != check.UpgradeState
                 || UpgradeNight != check.UpgradeNight
                 || UpgradeChanceTonight != check.UpgradeChanceTonight
-                || UpgradeChanceNext != check.UpgradeChanceNext;
+                || UpgradeChanceNext != check.UpgradeChanceNext
+                // Each answer is computed once per request, so the sequence identifies it.
+                || AreaSequence != check.AreaSequence;
         }
     }
 
@@ -221,8 +234,9 @@ namespace BlueprintShop
     internal static class ShopSerializer
     {
         // 5 (0.6.0): build queue gained UndoID and UndoProgress.
-        private const int FormatVersion = 5;
-        private const int ViewFields = 27;
+        // 6 (0.7.0): view data gained AreaSequence and AreaItems (copy from the floor).
+        private const int FormatVersion = 6;
+        private const int ViewFields = 29;
         private const int LabelFields = 3;
         private const int QueueFields = 8;
         private const int MaxEntries = 4096;
@@ -286,6 +300,14 @@ namespace BlueprintShop
             writer.Write(d.UpgradeNight);
             writer.Write(d.UpgradeChanceTonight);
             writer.Write(d.UpgradeChanceNext);
+            writer.Write(d.AreaSequence);
+            int area = d.AreaItems?.Count ?? 0;
+            writer.WriteArrayHeader(area * 2);
+            for (int i = 0; i < area; i++)
+            {
+                writer.Write(d.AreaItems[i].ID);
+                writer.Write(d.AreaItems[i].Count);
+            }
         }
 
         public static void Write(ref MessagePackWriter writer, BuildQueueData d)
@@ -444,6 +466,17 @@ namespace BlueprintShop
             d.UpgradeNight = reader.ReadInt32();
             d.UpgradeChanceTonight = reader.ReadInt32();
             d.UpgradeChanceNext = reader.ReadInt32();
+            d.AreaSequence = reader.ReadInt32();
+            int areaValues = reader.ReadArrayHeader();
+            if (areaValues > MaxEntries * 2 || areaValues % 2 != 0)
+            {
+                throw new MessagePackSerializationException($"{ModMain.Name}: malformed area counts ({areaValues})");
+            }
+            d.AreaItems = new List<OwnedCount>(areaValues / 2);
+            for (int i = 0; i < areaValues / 2; i++)
+            {
+                d.AreaItems.Add(new OwnedCount { ID = reader.ReadInt32(), Count = reader.ReadInt32() });
+            }
             return d;
         }
 

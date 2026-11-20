@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.0
+
+- **Copy from floor:** a new button in the cart. Draw a box over the floor (drag with the mouse, or set two corners with a controller), and everything standing in it is added to your cart. The tiles light up, and the shop counts what's in the box as you draw.
+- **Wishlists:** save your cart as a named list and add it back to the cart on any night, in any run. Lists are kept on your computer. They can be replaced with the current cart or deleted, and exported to or imported from the clipboard in the settings (with Mod List).
+- Copied items and wishlists are added on top of your cart. Anything that can't be bought tonight is skipped, and the shop lists what was skipped and why.
+- All players in an online game need 0.7.0; it can't be mixed with 0.6.x.
+
 ## 0.6.0
 
 - Placing items yourself: hold your third-action button (Y / Triangle on a controller) for a second and a half to take back the item you placed last. What you're holding goes back on the list. Hold again to keep going back. The panel at the bottom of the screen shows which item that would be, and how far along the hold is.

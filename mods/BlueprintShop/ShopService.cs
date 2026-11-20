@@ -52,6 +52,12 @@ namespace BlueprintShop
 
         private readonly Dictionary<Entity, SessionStatus> Statuses = new Dictionary<Entity, SessionStatus>();
 
+        /// <summary>Per session: the latest ScanArea answer (request sequence, appliance counts).</summary>
+        private readonly Dictionary<Entity, (int Sequence, List<OwnedCount> Items)> AreaResults = new Dictionary<Entity, (int, List<OwnedCount>)>();
+
+        /// <summary>Largest box side "copy from the floor" accepts, in tiles (the menu limits it too).</summary>
+        public const int MaxAreaSide = 40;
+
         private int LastLoggedCatalogHash;
 
         public struct SessionStatus
@@ -266,6 +272,9 @@ namespace BlueprintShop
                 ViewMode = ViewMode.Screen
             });
             EntityManager.AddComponent<CDoNotPersist>(session);
+            // Entity IDs get reused: don't hand a new menu an old menu's answers.
+            Statuses.Remove(session);
+            AreaResults.Remove(session);
             ShopLog.Debug(() => $"Opened shop session {session} for player {cPlayer.ID} (input source {cPlayer.InputSource})");
         }
 
@@ -276,6 +285,7 @@ namespace BlueprintShop
                 return;
             }
             Statuses.Remove(session);
+            AreaResults.Remove(session);
             EntityManager.DestroyEntity(session);
             ShopLog.Debug(() => $"Closed shop session {session}: {reason}");
         }
@@ -297,6 +307,14 @@ namespace BlueprintShop
         public SessionStatus GetStatus(Entity session)
         {
             return Statuses.TryGetValue(session, out SessionStatus status) ? status : default;
+        }
+
+        private static readonly List<OwnedCount> NoArea = new List<OwnedCount>();
+
+        /// <summary>The session's latest "copy from the floor" answer (sequence 0 = none).</summary>
+        public (int Sequence, List<OwnedCount> Items) GetAreaResult(Entity session)
+        {
+            return AreaResults.TryGetValue(session, out var result) ? result : (0, NoArea);
         }
 
         // ----------------------------------------------------------------- catalog
@@ -968,6 +986,13 @@ namespace BlueprintShop
             {
                 return;
             }
+            if (response.Action == ShopAction.ScanArea)
+            {
+                // Read-only and repeatable, so it skips the duplicate check and doesn't touch
+                // the order status (the menu sends these while a box is being drawn).
+                ScanArea(session, response);
+                return;
+            }
             SessionStatus status = GetStatus(session);
             if (response.Sequence != 0 && response.Sequence <= status.AckSequence)
             {
@@ -1019,6 +1044,54 @@ namespace BlueprintShop
                 Message = message
             };
             ShopLog.Debug(() => $"Session {session}: {(ok ? "OK" : "rejected")} - {message}");
+        }
+
+        /// <summary>
+        /// "Copy from the floor": counts the appliances standing on a box of tiles, per
+        /// appliance ID. Held items, parcels, blueprints and fixed things (the shop terminal,
+        /// anything CImmovable) aren't counted. The menu decides what's buyable.
+        /// </summary>
+        private void ScanArea(Entity session, ShopResponseData response)
+        {
+            List<ShopOrderLine> lines = response.Lines;
+            if (lines == null || lines.Count != 2)
+            {
+                return;
+            }
+            int x0 = Math.Min(lines[0].ID, lines[1].ID), x1 = Math.Max(lines[0].ID, lines[1].ID);
+            int z0 = Math.Min(lines[0].Quantity, lines[1].Quantity), z1 = Math.Max(lines[0].Quantity, lines[1].Quantity);
+            // The menu keeps boxes within the limit; trim anything bigger instead of trusting it.
+            x1 = Math.Min(x1, x0 + MaxAreaSide - 1);
+            z1 = Math.Min(z1, z0 + MaxAreaSide - 1);
+
+            var counts = new Dictionary<int, int>();
+            using (NativeArray<Entity> appliances = PlacedAppliances.ToEntityArray(Allocator.Temp))
+            {
+                foreach (Entity e in appliances)
+                {
+                    if (!Require(e, out CPosition pos) || !Require(e, out CAppliance appliance)
+                        || Has<CHeldBy>(e) || Has<CHeldAppliance>(e) || Has<CImmovable>(e) || Has<CShopTerminal>(e)
+                        || Has<CLetterAppliance>(e) || Has<CApplianceBlueprint>(e) || Has<CLetterBlueprint>(e))
+                    {
+                        continue;
+                    }
+                    int x = Mathf.RoundToInt(pos.Position.x), z = Mathf.RoundToInt(pos.Position.z);
+                    if (x < x0 || x > x1 || z < z0 || z > z1 || pos.Position.y < -100f)
+                    {
+                        continue;
+                    }
+                    counts.TryGetValue(appliance.ID, out int n);
+                    counts[appliance.ID] = n + 1;
+                }
+            }
+            var items = new List<OwnedCount>(counts.Count);
+            foreach (KeyValuePair<int, int> kv in counts)
+            {
+                items.Add(new OwnedCount { ID = kv.Key, Count = kv.Value });
+            }
+            items.Sort((a, b) => a.ID.CompareTo(b.ID));
+            AreaResults[session] = (response.Sequence, items);
+            ShopLog.Debug(() => $"Session {session}: area ({x0},{z0})-({x1},{z1}) holds {items.Count} kind(s) of appliance");
         }
 
         private bool ExecuteOrder(Entity session, List<ShopOrderLine> lines, ShopAction action, out string message)
