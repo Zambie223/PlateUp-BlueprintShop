@@ -287,6 +287,12 @@ namespace BlueprintShop
 
         private void TearDown()
         {
+            if (AreaMode)
+            {
+                // Closed mid-draw (the day started, the player left): give the camera back.
+                AreaMode = false;
+                AreaCamera.End(this);
+            }
             SaveCart();
             SetSearchFocus(false);
             LocalInputSourceConsumers.Remove(this);

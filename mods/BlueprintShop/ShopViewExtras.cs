@@ -270,6 +270,7 @@ namespace BlueprintShop
             {
                 VirtualCursor = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
             }
+            AreaCamera.Begin(this); // top-down, pannable view while drawing
         }
 
         private void EndAreaMode()
@@ -281,6 +282,7 @@ namespace BlueprintShop
             AreaMode = false;
             AreaDragging = false;
             AreaConfirming = false;
+            AreaCamera.End(this);
             AreaGraphic.Clear();
             AreaGraphic.gameObject.SetActive(false);
             AreaHud.gameObject.SetActive(false);
@@ -392,6 +394,34 @@ namespace BlueprintShop
                     SetStatus("Copy from the floor cancelled.", ShopTheme.TextDim);
                     return;
                 }
+            }
+
+            // Moving the view (the shop has this player's input, so Easy Floor Planner's own
+            // camera controls are paused): middle-drag, WASD and the wheel with a mouse; with a
+            // controller, push the cursor against an edge of the screen.
+            if (UsesMouse && Mouse.current != null)
+            {
+                if (Mouse.current.middleButton.isPressed)
+                {
+                    AreaCamera.PanPixels(Mouse.current.delta.ReadValue());
+                }
+                float wheel = Mouse.current.scroll.ReadValue().y;
+                if (Mathf.Abs(wheel) > 0.01f)
+                {
+                    AreaCamera.Zoom(Mathf.Sign(wheel));
+                }
+                AreaCamera.PanScreen(input.Movement, 0.6f, dt);
+            }
+            else
+            {
+                float edge = Mathf.Min(Screen.width, Screen.height) * 0.06f;
+                Vector2 push = Vector2.zero;
+                if (edge > 0f)
+                {
+                    push.x = pointer.x < edge ? -(1f - pointer.x / edge) : pointer.x > Screen.width - edge ? (pointer.x - (Screen.width - edge)) / edge : 0f;
+                    push.y = pointer.y < edge ? -(1f - pointer.y / edge) : pointer.y > Screen.height - edge ? (pointer.y - (Screen.height - edge)) / edge : 0f;
+                }
+                AreaCamera.PanScreen(push, 0.6f, dt);
             }
 
             AreaHover = TileAt(pointer);
@@ -565,10 +595,12 @@ namespace BlueprintShop
             if (UsesMouse)
             {
                 sb.Append(AreaHasStart ? "Let go to add them to your cart  •  " : "").Append("Right-click or Esc: back to the shop");
+                sb.Append("\nMiddle-drag or WASD: move the view  •  Wheel: zoom");
             }
             else
             {
                 sb.Append(AreaHasStart ? "Interact: add them to your cart  •  Back: start the box again" : "Back: return to the shop");
+                sb.Append("\nPush the cursor against an edge of the screen to move the view");
             }
             sb.Append("</color></size>");
             AreaHudText.text = sb.ToString();

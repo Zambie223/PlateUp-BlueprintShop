@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.1
+
+- Copy from floor: the camera looks straight down while you draw the box, and goes back to normal afterwards.
+- Copy from floor: you can move the view while drawing: middle-drag or WASD, and the mouse wheel to zoom. On a controller, push the cursor against an edge of the screen.
+- Works in the same online game as 0.7.0.
+
 ## 0.7.0
 
 - **Copy from floor:** a new button in the cart. Draw a box over the floor (drag with the mouse, or set two corners with a controller), and everything standing in it is added to your cart. The tiles light up, and the shop counts what's in the box as you draw.
