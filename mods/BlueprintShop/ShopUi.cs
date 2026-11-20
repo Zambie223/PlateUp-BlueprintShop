@@ -129,11 +129,11 @@ namespace BlueprintShop
                 string how = null;
 
                 // 1. Explicit override from BlueprintShop.cfg ("font=<asset name>").
-                if (!string.IsNullOrEmpty(ShopLog.FontOverride))
+                if (!string.IsNullOrEmpty(ShopSettings.FontOverride))
                 {
                     foreach (TMP_FontAsset f in Resources.FindObjectsOfTypeAll<TMP_FontAsset>())
                     {
-                        if (f != null && string.Equals(f.name, ShopLog.FontOverride, StringComparison.OrdinalIgnoreCase))
+                        if (f != null && string.Equals(f.name, ShopSettings.FontOverride, StringComparison.OrdinalIgnoreCase))
                         {
                             _font = f;
                             how = "config override";
@@ -142,7 +142,7 @@ namespace BlueprintShop
                     }
                     if (_font == null)
                     {
-                        ShopLog.Warn($"Font '{ShopLog.FontOverride}' from the config wasn't found; choosing automatically.");
+                        ShopLog.Warn($"Font '{ShopSettings.FontOverride}' from the config wasn't found; choosing automatically.");
                     }
                 }
 

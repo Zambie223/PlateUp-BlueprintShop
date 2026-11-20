@@ -231,7 +231,17 @@ namespace BlueprintShop
 
         private void LateUpdate()
         {
-            if (Root != null)
+            if (Root == null)
+            {
+                return;
+            }
+            // Per player: show_sale_labels only hides them on this machine.
+            bool show = ShopSettings.ShowSaleLabels;
+            if (Root.gameObject.activeSelf != show)
+            {
+                Root.gameObject.SetActive(show);
+            }
+            if (show)
             {
                 Face();
             }
@@ -276,13 +286,19 @@ namespace BlueprintShop
     /// Start of day, just before vanilla's DestroyAppliancesAtDay deletes everything outside:
     /// refund what was bought through the shop and is still outside, so nothing paid for is
     /// lost by forgetting to sell it. Items the menu needs (vanilla warned about them) aren't
-    /// refunded, matching the shop's sell rules; vanilla still deletes them for $0.
+    /// refunded, matching the shop's sell rules; vanilla still deletes them for $0. The refund
+    /// includes the sale loss setting (it's a sale), and refund_outside_at_day_start=false turns
+    /// it off (vanilla behaviour).
     /// </summary>
     [UpdateBefore(typeof(DestroyAppliancesAtDay))]
     public class OutsideSaleRefund : StartOfDaySystem, IModSystem
     {
         protected override void OnUpdate()
         {
+            if (!ShopSettings.RefundOutsideAtDayStart)
+            {
+                return;
+            }
             ShopService service = World.GetExistingSystem<ShopService>();
             if (service == null)
             {

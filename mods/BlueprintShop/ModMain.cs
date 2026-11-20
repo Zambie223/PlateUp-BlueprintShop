@@ -21,15 +21,15 @@ namespace BlueprintShop
     {
         public const string Id = "zambie.blueprintshop";
         public const string Name = "Blueprint Shop";
-        public const string Version = "0.4.1";
+        public const string Version = "0.5.0";
 
         private static Harmony _harmony;
         private static bool _resolverRegistered;
 
         public void PostActivate(KitchenMods.Mod mod)
         {
-            ShopLog.LoadConfig();
-            ShopLog.Info($"v{Version} loaded (verbose logging {(ShopLog.Verbose ? "ON" : "off")}, decorations every {ShopLog.DecorInterval} night(s), normal items on decoration nights {(ShopLog.NormalItemsOnDecorNights ? "on" : "off")}, config: {ShopLog.ConfigPath})");
+            ShopSettings.Load();
+            ShopLog.Info($"v{Version} loaded ({ShopSettings.Summary()})");
 
             RegisterAssemblyResolver();
 

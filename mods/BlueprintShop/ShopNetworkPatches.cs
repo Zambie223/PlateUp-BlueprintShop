@@ -34,6 +34,13 @@ namespace BlueprintShop
                 ShopSerializer.Write(ref writer, label);
                 return false;
             }
+            if (value is BuildQueueData queue)
+            {
+                writer.WriteArrayHeader(2);
+                writer.Write(ShopIds.QueueUnionKey);
+                ShopSerializer.Write(ref writer, queue);
+                return false;
+            }
             return true;
         }
     }
@@ -55,6 +62,13 @@ namespace BlueprintShop
                 reader.ReadArrayHeader();
                 reader.ReadInt32();
                 __result = ShopSerializer.ReadLabel(ref reader);
+                return false;
+            }
+            if (UnionPeek.IsKey(ref reader, ShopIds.QueueUnionKey))
+            {
+                reader.ReadArrayHeader();
+                reader.ReadInt32();
+                __result = ShopSerializer.ReadQueue(ref reader);
                 return false;
             }
             return true;

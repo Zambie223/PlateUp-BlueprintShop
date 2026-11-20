@@ -65,6 +65,9 @@ namespace BlueprintShop
         {
             public HeldKind Kind;
             public int ApplianceID;
+            /// <summary>What was paid for it (CPaidPrice); 0 for free items.</summary>
+            public int Paid;
+            /// <summary>What selling it gives back: Paid minus the sale loss setting.</summary>
             public int Refund;
             public Entity Entity;
             /// <summary>Selling it would leave the menu without a required process (see RequirementCheck).</summary>
@@ -231,6 +234,8 @@ namespace BlueprintShop
             OpenRequests.Clear();
         }
 
+        public bool HasOpenSession(Entity player) => FindSession(player) != Entity.Null;
+
         private Entity FindSession(Entity player)
         {
             using NativeArray<CShopSession> sessions = Sessions.ToComponentDataArray<CShopSession>(Allocator.Temp);
@@ -301,6 +306,11 @@ namespace BlueprintShop
             public int Day;
             public bool IsDecorNight;
             public bool UpgradesAvailable;
+            /// <summary>What the shop tells players about upgrades (status line under the title).</summary>
+            public UpgradeState UpgradeState;
+            /// <summary>Roll mode: tonight's and next night's unlock chance (0 to 1), cards included.</summary>
+            public float UpgradeChanceTonight;
+            public float UpgradeChanceNext;
             public float PriceMultiplier;
             public bool RandomPrices;
         }
@@ -310,19 +320,22 @@ namespace BlueprintShop
             int day = GetOrDefault<SDay>().Day;
             bool redEnvelopes = HasStatus(RestaurantStatus.JanuaryRedEnvelopes);
 
-            // Same formula as HandleNewShop. Vanilla rolls this chance once per letter; the shop
-            // offers upgrades whenever the chance is above zero (day 5+, or earlier with cards).
-            float upgradeChance = DifficultyHelpers.BaseUpgradedShopChance(day);
+            // HandleNewShop's chance is DifficultyHelpers.BaseUpgradedShopChance(day), which is
+            // floor(day / 5) * 10% and so above zero from night 5, plus every card's chance and
+            // the red envelopes. Vanilla rolls it once per letter; the shop offers upgrades
+            // whenever it's above zero. The night-based part is configurable (upgrade_night,
+            // default 5 = vanilla); the card and event parts still unlock upgrades earlier.
+            float extraChance = 0f;
             using (NativeArray<CUpgradedShopChance> chances = UpgradeChances.ToComponentDataArray<CUpgradedShopChance>(Allocator.Temp))
             {
                 foreach (CUpgradedShopChance c in chances)
                 {
-                    upgradeChance += (1f - upgradeChance) * c.Chance;
+                    extraChance += (1f - extraChance) * c.Chance;
                 }
             }
             if (redEnvelopes)
             {
-                upgradeChance += (1f - upgradeChance) * 0.2f;
+                extraChance += (1f - extraChance) * 0.2f;
             }
 
             // Every price discount in the game (cards, restaurant settings such as Turbo, the
@@ -339,16 +352,24 @@ namespace BlueprintShop
             {
                 multiplier *= 0.75f;
             }
+            // Balance setting price_percent (100 = vanilla, which multiplies by exactly 1).
+            multiplier *= ShopSettings.PricePercent / 100f;
 
-            return new CatalogContext
+            var ctx = new CatalogContext
             {
                 Day = day,
                 // Vanilla: every 5th night (CreateShopRequests). Configurable: decor_interval.
-                IsDecorNight = day > 0 && day % ShopLog.DecorInterval == 0,
-                UpgradesAvailable = upgradeChance > 0f,
+                IsDecorNight = day > 0 && day % ShopSettings.DecorInterval == 0,
                 PriceMultiplier = multiplier,
                 RandomPrices = !RandomShopPrices.IsEmpty
             };
+            // Saved unlock (and the roll salt) from UpgradeUnlockSystem. Before that singleton
+            // exists (first frames of a night, or prepare_uninstall), the salt comes from the
+            // run's seed directly, which is what the singleton would hold anyway.
+            bool hasSaved = Require(out SUpgradeUnlock saved);
+            int salt = hasSaved ? saved.Salt : (Require(out SFixedSeed seed) ? UpgradeUnlock.SaltFrom(seed) : 0);
+            UpgradeUnlock.Evaluate(ref ctx, extraChance, hasSaved && saved.Unlocked, saved.UnlockedDay, salt);
+            return ctx;
         }
 
         /// <summary>
@@ -372,7 +393,7 @@ namespace BlueprintShop
                 // normal_items_on_decor_nights the normal (Basic/default) pool is offered as well.
                 bool decorMatch = ctx.IsDecorNight
                     && (option.MatchesRequestTags(ShoppingTags.Decoration) || option.MatchesRequestTags(ShoppingTags.SpecialEvent));
-                bool normalMatch = (!ctx.IsDecorNight || ShopLog.NormalItemsOnDecorNights)
+                bool normalMatch = (!ctx.IsDecorNight || ShopSettings.NormalItemsOnDecorNights)
                     && (option.MatchesRequestTags(ShoppingTags.Basic) || option.MatchesRequestTags(ShoppingTagsExtensions.DefaultShoppingTag));
                 bool matches = decorMatch || normalMatch;
                 if (!matches)
@@ -526,6 +547,18 @@ namespace BlueprintShop
                     }
                 }
             }
+            // Bought to place by hand but not handed out yet (one in someone's hands is
+            // already an appliance, counted above).
+            var waiting = new Dictionary<int, int>();
+            World.GetExistingSystem<BuildQueueSystem>()?.AddWaitingCounts(waiting);
+            foreach (KeyValuePair<int, int> kv in waiting)
+            {
+                if (wanted.Contains(kv.Key))
+                {
+                    counts.TryGetValue(kv.Key, out int n);
+                    counts[kv.Key] = n + kv.Value;
+                }
+            }
             var result = new List<OwnedCount>(counts.Count);
             hash = 17;
             foreach (KeyValuePair<int, int> kv in counts)
@@ -572,7 +605,8 @@ namespace BlueprintShop
                 info.Kind = HeldKind.Other;
                 return info;
             }
-            info.Refund = Require(held, out CPaidPrice paid) ? Math.Max(0, paid.Price) : 0;
+            info.Paid = Require(held, out CPaidPrice paid) ? Math.Max(0, paid.Price) : 0;
+            info.Refund = ShopSettings.RefundFor(info.Paid);
             RequirementCheck check = NewRequirementCheck();
             if (check.Active)
             {
@@ -616,7 +650,9 @@ namespace BlueprintShop
                 int money = GetOrDefault<SMoney>().Amount;
                 Set(new SMoney { Amount = money + held.Refund });
             }
-            message = held.Refund > 0 ? $"Sold {name} for {held.Refund}." : $"Got rid of {name} (it was free, so no refund).";
+            message = held.Refund > 0 ? $"Sold {name} for {held.Refund}."
+                : held.Paid > 0 ? $"Got rid of {name} (the sale loss setting left no refund)."
+                : $"Got rid of {name} (it was free, so no refund).";
             ShopLog.Debug(() => $"Session {session}: sold {name} ({held.Kind}) for {held.Refund}");
             return true;
         }
@@ -631,7 +667,7 @@ namespace BlueprintShop
         public OutsideSale ComputeOutsideSale()
         {
             var sale = new OutsideSale();
-            if (ShopLog.PrepareUninstall || BinnedAppliances.IsEmpty)
+            if (ShopSettings.PrepareUninstall || BinnedAppliances.IsEmpty)
             {
                 sale.Hash = 17;
                 return sale;
@@ -645,7 +681,7 @@ namespace BlueprintShop
                     {
                         continue;
                     }
-                    var item = new OutsideItem { Entity = e, Refund = paid.Price };
+                    var item = new OutsideItem { Entity = e, Refund = ShopSettings.RefundFor(paid.Price) };
                     if (Require(e, out CLetterAppliance letter))
                     {
                         item.IsParcel = true;
@@ -951,9 +987,14 @@ namespace BlueprintShop
                 ok = false;
                 message = "The shop is closed during the day.";
             }
-            else if (response.Action == ShopAction.Purchase || response.Action == ShopAction.TakeBlueprint)
+            else if (response.Action == ShopAction.Purchase || response.Action == ShopAction.TakeBlueprint
+                || response.Action == ShopAction.PurchaseToHands)
             {
-                ok = ExecuteOrder(response.Lines, response.Action == ShopAction.TakeBlueprint, out message);
+                ok = ExecuteOrder(session, response.Lines, response.Action, out message);
+            }
+            else if (response.Action == ShopAction.QueueToDoor)
+            {
+                ok = ExecuteQueueToDoor(session, out message);
             }
             else if (response.Action == ShopAction.Sell)
             {
@@ -978,12 +1019,27 @@ namespace BlueprintShop
             ShopLog.Debug(() => $"Session {session}: {(ok ? "OK" : "rejected")} - {message}");
         }
 
-        private bool ExecuteOrder(List<ShopOrderLine> lines, bool asBlueprints, out string message)
+        private bool ExecuteOrder(Entity session, List<ShopOrderLine> lines, ShopAction action, out string message)
         {
             if (lines == null || lines.Count == 0)
             {
                 message = "Your cart is empty.";
                 return false;
+            }
+            bool asBlueprints = action == ShopAction.TakeBlueprint;
+            // "Place items myself": appliances go into the buyer's hands (BuildQueueSystem)
+            // instead of parcels. Decorations are still delivered inside, as usual.
+            bool toHands = action == ShopAction.PurchaseToHands;
+            CShopSession buyer = EntityManager.GetComponentData<CShopSession>(session);
+            BuildQueueSystem queue = null;
+            if (toHands)
+            {
+                queue = World.GetExistingSystem<BuildQueueSystem>();
+                if (queue == null || !EntityManager.Exists(buyer.Player) || !Require(buyer.Player, out CPlayer _))
+                {
+                    message = "Couldn't hand you the items. Untick \"Place items myself\" to get parcels instead.";
+                    return false;
+                }
             }
 
             CatalogContext ctx = GetContext();
@@ -1057,12 +1113,13 @@ namespace BlueprintShop
             }
 
             // Same placement as vanilla: appliances on the letter tiles, decor inside.
-            List<Vector3> applianceTiles = applianceItems > 0 ? FindFreeTiles(GetPostTiles(), applianceItems) : new List<Vector3>();
+            List<Vector3> applianceTiles = applianceItems > 0 && !toHands ? FindFreeTiles(GetPostTiles(), applianceItems) : new List<Vector3>();
+            int tilesNeeded = toHands ? 0 : applianceItems;
             List<Vector3> decorTiles = decorItems > 0 ? FindFreeTiles(GetPostTiles(force_inside: true), decorItems) : new List<Vector3>();
-            if (applianceTiles.Count < applianceItems || decorTiles.Count < decorItems)
+            if (applianceTiles.Count < tilesNeeded || decorTiles.Count < decorItems)
             {
                 int free = applianceTiles.Count + decorTiles.Count;
-                message = $"Not enough floor space for {applianceItems + decorItems} item(s), only {free} free spot(s). Open or move some parcels first.";
+                message = $"Not enough floor space for {tilesNeeded + decorItems} item(s), only {free} free spot(s). Open or move some parcels first.";
                 return false;
             }
 
@@ -1072,6 +1129,11 @@ namespace BlueprintShop
             foreach (KeyValuePair<(ShopEntryKind, int), int> kv in merged)
             {
                 ShopEntry entry = catalog[kv.Key];
+                if (toHands && entry.Kind == ShopEntryKind.Appliance)
+                {
+                    queue.Enqueue(buyer.Player, GetComponent<CPlayer>(buyer.Player), entry.ID, entry.Price, kv.Value);
+                    continue;
+                }
                 for (int i = 0; i < kv.Value; i++)
                 {
                     if (entry.Kind == ShopEntryKind.Decor)
@@ -1088,7 +1150,7 @@ namespace BlueprintShop
                     else
                     {
                         Entity parcel = PostHelpers.CreateApplianceParcel(EntityManager, applianceTiles[a++], entry.ID);
-                        if (entry.Price > 0 && !ShopLog.PrepareUninstall)
+                        if (entry.Price > 0 && !ShopSettings.PrepareUninstall)
                         {
                             // Carried onto the appliance when the parcel is opened (OpenParcelPatch).
                             EntityManager.AddComponentData(parcel, new CPaidPrice { Price = entry.Price });
@@ -1103,14 +1165,69 @@ namespace BlueprintShop
             }
 
             int count = applianceItems + decorItems;
+            if (toHands && applianceItems > 0)
+            {
+                message = (total > 0 ? $"Bought {count} item(s) for {total}." : $"Got {count} item(s) for free.")
+                    + " Close the shop and they'll be handed to you to place."
+                    + (decorItems > 0 ? " Decorations are delivered inside, as usual." : "");
+                return true;
+            }
             message = asBlueprints
                 ? $"{count} blueprint(s) placed outside."
                 : total > 0 ? $"Bought {count} item(s) for {total}. They're waiting by the door." : $"{count} item(s) delivered.";
             return true;
         }
 
+        private bool ExecuteQueueToDoor(Entity session, out string message)
+        {
+            CShopSession s = EntityManager.GetComponentData<CShopSession>(session);
+            BuildQueueSystem queue = World.GetExistingSystem<BuildQueueSystem>();
+            if (queue == null || queue.CountWaiting(s.Player) == 0)
+            {
+                message = "Nothing is waiting to be placed.";
+                return false;
+            }
+            int sent = queue.SendToDoor(s.Player, out int left);
+            if (sent == 0)
+            {
+                message = "There's no free space by the door. Open or move some parcels first.";
+                return false;
+            }
+            message = left > 0
+                ? $"Sent {sent} item(s) to the door; there was no room for the other {left}. Open or move some parcels, then try again."
+                : $"Sent {sent} item(s) to the door as parcels.";
+            return true;
+        }
+
+        /// <summary>
+        /// Build queue items to parcels on the letter tiles (with their price record), in list
+        /// order, as many as there's room for. Returns how many were delivered.
+        /// </summary>
+        internal int DeliverAsParcels(List<BuildQueueSystem.QueuedItem> items)
+        {
+            if (items.Count == 0)
+            {
+                return 0;
+            }
+            List<Vector3> tiles = FindFreeTiles(GetPostTiles(), items.Count);
+            for (int i = 0; i < tiles.Count; i++)
+            {
+                Entity parcel = PostHelpers.CreateApplianceParcel(EntityManager, tiles[i], items[i].ApplianceID);
+                if (items[i].Price > 0 && !ShopSettings.PrepareUninstall)
+                {
+                    EntityManager.AddComponentData(parcel, new CPaidPrice { Price = items[i].Price });
+                }
+            }
+            return tiles.Count;
+        }
+
         private bool IsPending(int applianceId)
         {
+            BuildQueueSystem queue = World.GetExistingSystem<BuildQueueSystem>();
+            if (queue != null && queue.IsWaiting(applianceId))
+            {
+                return true;
+            }
             using (NativeArray<CLetterAppliance> parcels = PendingParcels.ToComponentDataArray<CLetterAppliance>(Allocator.Temp))
             {
                 foreach (CLetterAppliance p in parcels)

@@ -3,7 +3,7 @@
   <PropertyGroup>
     <AssemblyName>BlueprintShop</AssemblyName>
     <RootNamespace>BlueprintShop</RootNamespace>
-    <Version>0.4.1</Version>
+    <Version>0.5.0</Version>
     <!-- Folder name under <game>\Mods\ -->
     <ModFolderName>BlueprintShop</ModFolderName>
   </PropertyGroup>

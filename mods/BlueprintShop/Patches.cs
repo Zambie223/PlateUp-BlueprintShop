@@ -16,6 +16,8 @@ namespace BlueprintShop
 
         private static GameObject _labelTemplate;
 
+        private static GameObject _queueTemplate;
+
         private static bool Prefix(ViewType view_type, ref GameObject __result)
         {
             if (view_type == ShopIds.LabelViewType)
@@ -29,6 +31,19 @@ namespace BlueprintShop
                     ShopLog.Debug(() => "Created sale label template");
                 }
                 __result = _labelTemplate;
+                return false;
+            }
+            if (view_type == ShopIds.QueueViewType)
+            {
+                if (_queueTemplate == null)
+                {
+                    _queueTemplate = new GameObject("BlueprintShop Build Queue Template");
+                    _queueTemplate.SetActive(false);
+                    _queueTemplate.AddComponent<BuildQueueView>();
+                    Object.DontDestroyOnLoad(_queueTemplate);
+                    ShopLog.Debug(() => "Created build queue template");
+                }
+                __result = _queueTemplate;
                 return false;
             }
             if (view_type != ShopIds.ViewType)
@@ -53,16 +68,32 @@ namespace BlueprintShop
     /// <summary>
     /// The shop terminal reuses the reroll trigger's model. The host sends the reroll view a
     /// price of -1 for terminals (see TerminalLabelViewSystem); show "Shop" instead of
-    /// "Reroll -1".
+    /// "Reroll -1", and swap the dice hologram for a shopping cart (ShopHologram).
     /// </summary>
     [HarmonyPatch(typeof(RerollBlueprintView), "UpdateData", typeof(RerollBlueprintView.ViewData))]
     internal static class TerminalLabelPatch
     {
-        private static void Postfix(RerollBlueprintView.ViewData data, TextMeshPro ___Title)
+        private static void Postfix(RerollBlueprintView __instance, RerollBlueprintView.ViewData data, TextMeshPro ___Title)
         {
-            if (data.Price == ShopIds.TerminalPriceSentinel && ___Title != null)
+            if (data.Price == ShopIds.TerminalPriceSentinel)
             {
-                ___Title.text = "Shop";
+                if (___Title != null)
+                {
+                    ___Title.text = "Shop";
+                }
+                try
+                {
+                    ShopHologram.Apply(__instance);
+                }
+                catch (System.Exception e)
+                {
+                    ShopLog.Error("Couldn't build the shop terminal's hologram; it keeps the dice.", e);
+                }
+            }
+            else
+            {
+                // Not (or no longer) a shop terminal: make sure it shows its own dice.
+                ShopHologram.Remove(__instance);
             }
         }
     }

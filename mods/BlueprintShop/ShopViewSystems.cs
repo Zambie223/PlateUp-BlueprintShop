@@ -15,11 +15,12 @@ namespace BlueprintShop
     {
         private EntityQuery Sessions;
         private ShopService Service;
+        private BuildQueueSystem Queue;
 
         protected override void Initialise()
         {
             base.Initialise();
-            Sessions = GetEntityQuery(new QueryHelper().All(typeof(CShopSession), typeof(CLinkedView)));
+            Sessions =GetEntityQuery(new QueryHelper().All(typeof(CShopSession), typeof(CLinkedView)));
         }
 
         protected override void OnUpdate()
@@ -45,7 +46,7 @@ namespace BlueprintShop
             int hash = ShopService.HashCatalog(catalog);
             Service.LogCatalogIfChanged(ctx, catalog, hash);
             int money = GetOrDefault<SMoney>().Amount;
-            ShopStateFlags flags = ShopLog.PrepareUninstall ? ShopStateFlags.UninstallPrep : ShopStateFlags.None;
+            ShopStateFlags flags = ShopSettings.PrepareUninstall ? ShopStateFlags.UninstallPrep : ShopStateFlags.None;
 
             using NativeArray<Entity> entities = Sessions.ToEntityArray(Allocator.Temp);
             using NativeArray<CShopSession> sessions = Sessions.ToComponentDataArray<CShopSession>(Allocator.Temp);
@@ -71,6 +72,7 @@ namespace BlueprintShop
             }
             // After orders/sales, so the counts include what was just bought or sold.
             List<OwnedCount> owned = Service.CountOwned(catalog, out int ownedHash);
+            Queue = Queue ?? World.GetExistingSystem<BuildQueueSystem>();
             ShopService.OutsideSale outside = Service.ComputeOutsideSale();
 
             for (int i = 0; i < entities.Length; i++)
@@ -101,7 +103,14 @@ namespace BlueprintShop
                     Owned = owned,
                     HeldRequired = held.Required,
                     OutsideHash = outside.Hash,
-                    Outside = outside.Lines
+                    Outside = outside.Lines,
+                    QueueCount = Queue?.CountWaiting(sessions[i].Player) ?? 0,
+                    HeldPaid = held.Paid,
+                    SaleLossPercent = ShopSettings.SaleLossPercent,
+                    UpgradeState = ctx.UpgradeState,
+                    UpgradeNight = ShopSettings.UpgradeNight,
+                    UpgradeChanceTonight = UnityEngine.Mathf.RoundToInt(ctx.UpgradeChanceTonight * 1000f),
+                    UpgradeChanceNext = UnityEngine.Mathf.RoundToInt(ctx.UpgradeChanceNext * 1000f)
                 });
             }
         }

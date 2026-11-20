@@ -43,7 +43,12 @@ namespace BlueprintShop
         Sell = 4,
         /// <summary>Sell everything outside (bin icon) that was bought. One line whose Quantity
         /// is the OutsideHash the menu showed, so a changed list is refused.</summary>
-        SellOutside = 5
+        SellOutside = 5,
+        /// <summary>Purchase, but appliances go into the buyer's hands one by one (build queue)
+        /// instead of parcels. Same lines as Purchase.</summary>
+        PurchaseToHands = 6,
+        /// <summary>Send the owner's items still waiting in the build queue to the door as parcels.</summary>
+        QueueToDoor = 7
     }
 
     /// <summary>Outside items of one kind: how many will sell (and for how much), how many are kept.</summary>
@@ -111,6 +116,20 @@ namespace BlueprintShop
         public bool HeldRequired;
         public int OutsideHash;
         public List<OutsideLine> Outside;
+        // v4
+        /// <summary>The owner's items waiting in the build queue (not counting one in their hands).</summary>
+        public int QueueCount;
+        /// <summary>What was paid for the held item (HeldRefund is this minus the sale loss).</summary>
+        public int HeldPaid;
+        /// <summary>The host's sale loss setting, for the sell box's explanation.</summary>
+        public int SaleLossPercent;
+        /// <summary>The status line under the title (see UpgradeUnlock).</summary>
+        public UpgradeState UpgradeState;
+        /// <summary>LockedUntilNight: the night upgrades unlock on.</summary>
+        public int UpgradeNight;
+        /// <summary>Roll mode: tonight's and next night's unlock chance, in tenths of a percent.</summary>
+        public int UpgradeChanceTonight;
+        public int UpgradeChanceNext;
 
         public bool IsChangedFrom(ShopViewData check)
         {
@@ -129,7 +148,44 @@ namespace BlueprintShop
                 || HeldRefund != check.HeldRefund
                 || OwnedHash != check.OwnedHash
                 || HeldRequired != check.HeldRequired
-                || OutsideHash != check.OutsideHash;
+                || OutsideHash != check.OutsideHash
+                || QueueCount != check.QueueCount
+                || HeldPaid != check.HeldPaid
+                || SaleLossPercent != check.SaleLossPercent
+                || UpgradeState != check.UpgradeState
+                || UpgradeNight != check.UpgradeNight
+                || UpgradeChanceTonight != check.UpgradeChanceTonight
+                || UpgradeChanceNext != check.UpgradeChanceNext;
+        }
+    }
+
+    /// <summary>Host -> every machine: one player's build queue. Only the owner's machine shows it.</summary>
+    public struct BuildQueueData : IViewData, IViewData.ICheckForChanges<BuildQueueData>
+    {
+        public int PlayerID;
+        public int InputSource;
+        /// <summary>Appliance ID of the queued item in the player's hands, or 0.</summary>
+        public int HeldID;
+        /// <summary>Items are waiting but the player is holding something else.</summary>
+        public bool HandsBusy;
+        /// <summary>Waiting items per appliance ID, in purchase order.</summary>
+        public List<OwnedCount> Waiting;
+
+        public bool IsChangedFrom(BuildQueueData check)
+        {
+            if (PlayerID != check.PlayerID || InputSource != check.InputSource || HeldID != check.HeldID
+                || HandsBusy != check.HandsBusy || (Waiting?.Count ?? 0) != (check.Waiting?.Count ?? 0))
+            {
+                return true;
+            }
+            for (int i = 0; i < (Waiting?.Count ?? 0); i++)
+            {
+                if (Waiting[i].ID != check.Waiting[i].ID || Waiting[i].Count != check.Waiting[i].Count)
+                {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 
@@ -159,9 +215,10 @@ namespace BlueprintShop
     /// </summary>
     internal static class ShopSerializer
     {
-        private const int FormatVersion = 3;
-        private const int ViewFields = 20;
+        private const int FormatVersion = 4;
+        private const int ViewFields = 27;
         private const int LabelFields = 3;
+        private const int QueueFields = 6;
         private const int MaxEntries = 4096;
         private const int MaxLines = 512;
         private const int MaxStatusLength = 512;
@@ -216,6 +273,57 @@ namespace BlueprintShop
                 writer.Write(l.Total);
                 writer.Write(l.RequiredCount);
             }
+            writer.Write(d.QueueCount);
+            writer.Write(d.HeldPaid);
+            writer.Write(d.SaleLossPercent);
+            writer.Write((byte)d.UpgradeState);
+            writer.Write(d.UpgradeNight);
+            writer.Write(d.UpgradeChanceTonight);
+            writer.Write(d.UpgradeChanceNext);
+        }
+
+        public static void Write(ref MessagePackWriter writer, BuildQueueData d)
+        {
+            writer.WriteArrayHeader(QueueFields);
+            writer.Write(FormatVersion);
+            writer.Write(d.PlayerID);
+            writer.Write(d.InputSource);
+            writer.Write(d.HeldID);
+            writer.Write(d.HandsBusy);
+            int count = d.Waiting?.Count ?? 0;
+            writer.WriteArrayHeader(count * 2);
+            for (int i = 0; i < count; i++)
+            {
+                writer.Write(d.Waiting[i].ID);
+                writer.Write(d.Waiting[i].Count);
+            }
+        }
+
+        public static BuildQueueData ReadQueue(ref MessagePackReader reader)
+        {
+            int fields = reader.ReadArrayHeader();
+            int version = reader.ReadInt32();
+            if (version != FormatVersion || fields != QueueFields)
+            {
+                throw new MessagePackSerializationException(
+                    $"{ModMain.Name}: build queue data format {version}/{fields} doesn't match this version of the mod ({FormatVersion}). All players need the same mod version.");
+            }
+            BuildQueueData d = default;
+            d.PlayerID = reader.ReadInt32();
+            d.InputSource = reader.ReadInt32();
+            d.HeldID = reader.ReadInt32();
+            d.HandsBusy = reader.ReadBoolean();
+            int values = reader.ReadArrayHeader();
+            if (values > MaxEntries * 2 || values % 2 != 0)
+            {
+                throw new MessagePackSerializationException($"{ModMain.Name}: malformed build queue ({values})");
+            }
+            d.Waiting = new List<OwnedCount>(values / 2);
+            for (int i = 0; i < values / 2; i++)
+            {
+                d.Waiting.Add(new OwnedCount { ID = reader.ReadInt32(), Count = reader.ReadInt32() });
+            }
+            return d;
         }
 
         public static void Write(ref MessagePackWriter writer, SaleLabelData d)
@@ -319,6 +427,13 @@ namespace BlueprintShop
                     RequiredCount = reader.ReadInt32()
                 });
             }
+            d.QueueCount = reader.ReadInt32();
+            d.HeldPaid = reader.ReadInt32();
+            d.SaleLossPercent = reader.ReadInt32();
+            d.UpgradeState = (UpgradeState)reader.ReadByte();
+            d.UpgradeNight = reader.ReadInt32();
+            d.UpgradeChanceTonight = reader.ReadInt32();
+            d.UpgradeChanceNext = reader.ReadInt32();
             return d;
         }
 

@@ -33,7 +33,7 @@ namespace BlueprintShop
 
         protected override void OnUpdate()
         {
-            if (ShopLog.PrepareUninstall)
+            if (ShopSettings.PrepareUninstall)
             {
                 Tracked.Clear();
                 if (!Tagged.IsEmpty)

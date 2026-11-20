@@ -69,6 +69,16 @@ namespace BlueprintShop
         /// <summary>Cart contents per local player, kept until the day changes (memory only).</summary>
         private static readonly Dictionary<int, SavedCart> SavedCarts = new Dictionary<int, SavedCart>();
 
+        /// <summary>
+        /// "Place items myself" ticked or unticked in the shop, per local player, remembered until
+        /// the game closes (memory only). Players who haven't touched it follow the saved
+        /// place_items_myself setting.
+        /// </summary>
+        private static readonly Dictionary<int, bool> PlaceMyself = new Dictionary<int, bool>();
+
+        /// <summary>The saved default changed (options page): everyone follows it again.</summary>
+        internal static void ResetPlaceMyself() => PlaceMyself.Clear();
+
         static ShopView()
         {
             // Day numbers repeat between runs; forget saved carts whenever the scene changes
@@ -98,8 +108,9 @@ namespace BlueprintShop
         private const float CardWidth = 180f;
         private const float CardHeight = 244f;
         private const int SnapshotsPerFrame = 3;
-        private const float CursorSpeed = 1100f; // reference pixels per second at full stick
-        private const float SnapRadius = 44f;    // reference pixels: aim-assist reach
+        // Reference pixels per second at full stick, at 100% shop_cursor_speed_percent.
+        // The aim-assist reach is ShopSettings.SnapRadius (shop_aim_assist).
+        private const float BaseCursorSpeed = 1100f;
         private const float CloseRetrySeconds = 2f;
         private const float SellConfirmSeconds = 3f;
         private const int MaxSearchLength = 32;
@@ -115,7 +126,7 @@ namespace BlueprintShop
         private int RenderedCatalogHash;
         private int RenderedOwnedHash;
         private int RenderedMoney = int.MinValue;
-        private (HeldKind, int, int, ShopStateFlags, bool) RenderedHeld = (HeldKind.None, -1, -1, ShopStateFlags.None, false);
+        private (HeldKind, int, int, ShopStateFlags, bool, int, int) RenderedHeld = (HeldKind.None, -1, -1, ShopStateFlags.None, false, -1, -1);
         private int RenderedOutsideHash = int.MinValue;
         private float OutsideConfirmUntil;
         private Category ActiveCategory = Category.All;
@@ -164,6 +175,9 @@ namespace BlueprintShop
         private TextMeshProUGUI TitleText;
         private TextMeshProUGUI MoneyText;
         private TextMeshProUGUI SubtotalText;
+        /// <summary>Under the title: when upgrades unlock (fixed night or nightly roll).</summary>
+        private TextMeshProUGUI UpgradeText;
+        private (UpgradeState, int, int, int) RenderedUpgrade = ((UpgradeState)255, -1, -1, -1);
         private TextMeshProUGUI HintText;
         private UiButton SearchBox;
         private TextMeshProUGUI SearchLabel;
@@ -178,6 +192,12 @@ namespace BlueprintShop
         private RectTransform OutsideBox;
         private TextMeshProUGUI OutsideText;
         private UiButton OutsideButton;
+        private RectTransform QueueBox;
+        private TextMeshProUGUI QueueText;
+        private UiButton QueueButton;
+        private int RenderedQueueCount = -1;
+        private UiButton PlaceToggle;
+        private GameObject PlaceTick;
         private RectTransform CartViewport;
         private RectTransform CartContent;
         private TextMeshProUGUI TotalText;
@@ -233,14 +253,17 @@ namespace BlueprintShop
             }
         }
 
-        private static bool DetermineLocalOwner(ShopViewData data)
+        private static bool DetermineLocalOwner(ShopViewData data) => IsLocalPlayer(data.OwnerPlayerID, data.OwnerInputSource);
+
+        /// <summary>True if this machine's input source drives the player (also used by BuildQueueView).</summary>
+        internal static bool IsLocalPlayer(int playerId, int inputSource)
         {
             BaseInputSource input = InputSourceIdentifier.DefaultInputSource;
-            if (input == null || data.OwnerInputSource != (int)InputSourceIdentifier.Identifier)
+            if (input == null || inputSource != (int)InputSourceIdentifier.Identifier)
             {
                 return false;
             }
-            return input.GetCurrentController(data.OwnerPlayerID) != ControllerType.None;
+            return input.GetCurrentController(playerId) != ControllerType.None;
         }
 
         public override bool HasStateUpdate(out IResponseData state)
@@ -456,8 +479,8 @@ namespace BlueprintShop
                     move.Normalize();
                 }
                 // Mild acceleration curve, and "sticky" buttons: slower while over one.
-                float speed = CursorSpeed * scale * Mathf.Lerp(0.35f, 1f, move.magnitude);
-                if (LastHovered != null)
+                float speed = BaseCursorSpeed * (ShopSettings.CursorSpeedPercent / 100f) * scale * Mathf.Lerp(0.35f, 1f, move.magnitude);
+                if (LastHovered != null && ShopSettings.AimAssist != ShopAimAssist.Off)
                 {
                     speed *= 0.65f;
                 }
@@ -605,7 +628,8 @@ namespace BlueprintShop
 
         /// <summary>
         /// The button under the pointer. Controller players also get the nearest button within
-        /// SnapRadius (aim assist), so they don't have to land exactly on small targets.
+        /// ShopSettings.SnapRadius (aim assist, configurable, can be off), so they don't have to
+        /// land exactly on small targets.
         /// </summary>
         private UiButton FindHovered(Vector2 pointer, float scale, out Rect hoveredRect)
         {
@@ -645,8 +669,8 @@ namespace BlueprintShop
                     }
                 }
             }
-            float reach = SnapRadius * scale;
-            if (nearest != null && nearestDist <= reach * reach)
+            float reach = ShopSettings.SnapRadius * scale;
+            if (nearest != null && reach > 0f && nearestDist <= reach * reach)
             {
                 hoveredRect = nearestRect;
                 return nearest;
@@ -853,8 +877,58 @@ namespace BlueprintShop
             }
             if (lines.Count > 0)
             {
-                SendOrder(ShopAction.Purchase, lines, "Placing order...");
+                SendOrder(IsPlacingMyself ? ShopAction.PurchaseToHands : ShopAction.Purchase, lines, "Placing order...");
             }
+        }
+
+        private bool IsPlacingMyself => HasData
+            && (PlaceMyself.TryGetValue(Data.OwnerPlayerID, out bool on) ? on : ShopSettings.PlaceMyselfByDefault);
+
+        private void TogglePlaceMyself()
+        {
+            if (!HasData)
+            {
+                return;
+            }
+            PlaceMyself[Data.OwnerPlayerID] = !IsPlacingMyself;
+            RefreshPlaceToggle();
+        }
+
+        private void RefreshPlaceToggle()
+        {
+            if (PlaceTick != null)
+            {
+                PlaceTick.SetActive(IsPlacingMyself);
+            }
+        }
+
+        private void SendQueueToDoor()
+        {
+            if (Data.QueueCount <= 0)
+            {
+                return;
+            }
+            SendOrder(ShopAction.QueueToDoor, new List<ShopOrderLine>(), "Sending to the door...");
+            RefreshQueueBox(force: true);
+        }
+
+        private void RefreshQueueBox(bool force)
+        {
+            if (!force && Data.QueueCount == RenderedQueueCount)
+            {
+                return;
+            }
+            RenderedQueueCount = Data.QueueCount;
+            QueueBox.gameObject.SetActive(Data.QueueCount > 0);
+            if (Data.QueueCount <= 0)
+            {
+                return;
+            }
+            int n = Data.QueueCount;
+            QueueText.text = $"<b>{n} item{(n == 1 ? "" : "s")} to place</b>\n<color=#BFB2A3>Close the shop and they're handed to you one at a time.</color>";
+            QueueButton.Label.text = $"Send {(n == 1 ? "it" : "them")} to the door instead";
+            QueueButton.Interactable = AwaitingSequence == 0;
+            QueueButton.Refresh();
         }
 
         private void TakeBlueprint(ShopEntry entry)
@@ -1035,6 +1109,8 @@ namespace BlueprintShop
                 }
             }
 
+            RefreshUpgradeText();
+
             if (Data.Money != RenderedMoney)
             {
                 RenderedMoney = Data.Money;
@@ -1051,7 +1127,7 @@ namespace BlueprintShop
                 RenderedAck = Data.AckSequence;
                 if (AwaitingSequence != 0 && Data.AckSequence >= AwaitingSequence)
                 {
-                    if (Data.LastSucceeded && AwaitingAction == ShopAction.Purchase)
+                    if (Data.LastSucceeded && (AwaitingAction == ShopAction.Purchase || AwaitingAction == ShopAction.PurchaseToHands))
                     {
                         ClearCart();
                     }
@@ -1060,11 +1136,13 @@ namespace BlueprintShop
                     CartDirty = true;
                     RefreshSellBox(force: true);
                     RefreshOutsideBox(force: true);
+                    RefreshQueueBox(force: true);
                 }
             }
 
             RefreshSellBox(force: false);
             RefreshOutsideBox(force: false);
+            RefreshQueueBox(force: false);
 
             if (CartDirty)
             {
@@ -1287,9 +1365,17 @@ namespace BlueprintShop
             RectTransform header = Ui.Rect("Header", Panel);
             Ui.Layout(header, minH: 64, prefH: 64, flexH: 0);
             Ui.Group<HorizontalLayoutGroup>(header, 12, null, TextAnchor.MiddleLeft);
-            TitleText = Ui.Text(header, "Title", "Blueprint Shop", 34);
+            // Title, and under it the upgrade status line (hidden when there's nothing to say).
+            RectTransform titleCol = Ui.Rect("TitleColumn", header);
+            Ui.Layout(titleCol, flexW: 1, prefH: 64);
+            Ui.Group<VerticalLayoutGroup>(titleCol, 0, null, TextAnchor.MiddleLeft).childForceExpandWidth = true;
+            TitleText = Ui.Text(titleCol, "Title", "Blueprint Shop", 34);
             Ui.AutoSize(TitleText, 22);
-            Ui.Layout(TitleText, flexW: 1, prefH: 64);
+            Ui.Layout(TitleText, prefH: 40);
+            UpgradeText = Ui.Text(titleCol, "Upgrades", "", 18, TextAlignmentOptions.Left, ShopTheme.TextDim);
+            Ui.AutoSize(UpgradeText, 12);
+            Ui.Layout(UpgradeText, prefH: 22);
+            UpgradeText.gameObject.SetActive(false);
 
             // Balance, and under it what the cart will leave you with.
             RectTransform money = Ui.Rect("Money", header);
@@ -1366,6 +1452,19 @@ namespace BlueprintShop
             Ui.Layout(cartBg, minW: 360, prefW: 400, flexW: 0, flexH: 1);
             Ui.Group<VerticalLayoutGroup>(cartBg, 8, new RectOffset(14, 14, 12, 14));
 
+            // Items bought to place by hand that haven't been handed out yet.
+            Image queue = Ui.Box(cartBg.transform, "Queue", ShopTheme.Card);
+            QueueBox = queue.rectTransform;
+            Ui.Layout(QueueBox, minH: 104, prefH: 104, flexH: 0);
+            Ui.Group<VerticalLayoutGroup>(QueueBox, 6, new RectOffset(10, 10, 8, 8)).childForceExpandWidth = true;
+            QueueText = Ui.Text(QueueBox, "Text", "", 18);
+            Ui.AutoSize(QueueText, 12);
+            Ui.Layout(QueueText, prefH: 44);
+            QueueButton = Ui.Button(QueueBox, "QueueToDoor", "Send them to the door", 20, SendQueueToDoor);
+            Ui.Layout(QueueButton.Rect, prefH: 38);
+            StaticButtons.Add(QueueButton);
+            QueueBox.gameObject.SetActive(false);
+
             // Sell what you're holding.
             Image sell = Ui.Box(cartBg.transform, "Sell", ShopTheme.Card);
             SellBox = sell.rectTransform;
@@ -1416,6 +1515,26 @@ namespace BlueprintShop
             StatusText = Ui.Text(cartBg.transform, "Status", "", 19, TextAlignmentOptions.TopLeft, ShopTheme.TextDim);
             Ui.AutoSize(StatusText, 13);
             Ui.Layout(StatusText, prefH: 70, flexH: 0);
+
+            // "Place items myself": a tick box. Off (parcels by the door) is the default.
+            PlaceToggle = Ui.Button(cartBg.transform, "PlaceToggle", "Place items myself", 19, TogglePlaceMyself);
+            PlaceToggle.Normal = ShopTheme.PanelInner;
+            PlaceToggle.Hover = ShopTheme.Card;
+            PlaceToggle.Label.alignment = TextAlignmentOptions.Left;
+            Ui.Stretch(PlaceToggle.Label.rectTransform, 44, 6, 2, 2);
+            Ui.Layout(PlaceToggle.Rect, minH: 38, prefH: 38, flexH: 0);
+            Image tickFrame = Ui.Box(PlaceToggle.Rect, "Tick", ShopTheme.TextDim);
+            RectTransform frame = tickFrame.rectTransform;
+            frame.anchorMin = frame.anchorMax = new Vector2(0f, 0.5f);
+            frame.pivot = new Vector2(0f, 0.5f);
+            frame.sizeDelta = new Vector2(24f, 24f);
+            frame.anchoredPosition = new Vector2(10f, 0f);
+            Ui.Stretch(Ui.Box(frame, "Inner", ShopTheme.Panel).rectTransform, 2, 2, 2, 2);
+            Image tick = Ui.Box(frame, "Fill", ShopTheme.Accent);
+            Ui.Stretch(tick.rectTransform, 5, 5, 5, 5);
+            PlaceTick = tick.gameObject;
+            StaticButtons.Add(PlaceToggle);
+            RefreshPlaceToggle();
 
             RectTransform buttons = Ui.Rect("Buttons", cartBg.transform);
             // flexH 0: childForceExpandHeight below makes the row report itself as flexible,
@@ -1862,9 +1981,54 @@ namespace BlueprintShop
             RefreshOutsideBox(force: true);
         }
 
+        /// <summary>The host's upgrade status: when they unlock, or (roll mode) tonight's and next night's chance.</summary>
+        private void RefreshUpgradeText()
+        {
+            var state = (Data.UpgradeState, Data.UpgradeNight, Data.UpgradeChanceTonight, Data.UpgradeChanceNext);
+            if (state == RenderedUpgrade || UpgradeText == null)
+            {
+                return;
+            }
+            RenderedUpgrade = state;
+            string text;
+            switch (Data.UpgradeState)
+            {
+                case UpgradeState.LockedUntilNight:
+                    text = $"Upgraded appliances unlock on night {Data.UpgradeNight}.";
+                    break;
+                case UpgradeState.LockedRoll:
+                    text = Data.UpgradeChanceTonight > 0
+                        ? $"Upgrades still locked: tonight's {Permille(Data.UpgradeChanceTonight)} roll missed. Next night: {Permille(Data.UpgradeChanceNext)} chance to unlock."
+                        : $"Upgrades locked. Next night: {Permille(Data.UpgradeChanceNext)} chance to unlock.";
+                    break;
+                case UpgradeState.UnlockedTonight:
+                    text = "<color=#FF9800>Upgrades unlocked tonight!</color> They stay unlocked for the rest of the run.";
+                    break;
+                default:
+                    text = null;
+                    break;
+            }
+            UpgradeText.gameObject.SetActive(text != null);
+            UpgradeText.text = text ?? "";
+        }
+
+        /// <summary>Tenths of a percent as text, e.g. "30%" or "2.5%".</summary>
+        private static string Permille(int permille)
+        {
+            if (permille <= 0)
+            {
+                return "0%";
+            }
+            if (permille >= 1000)
+            {
+                return "100%";
+            }
+            return permille % 10 == 0 ? $"{permille / 10}%" : $"{permille / 10f:0.#}%";
+        }
+
         private void RefreshSellBox(bool force)
         {
-            var state = (Data.HeldKind, Data.HeldID, Data.HeldRefund, Data.StateFlags, Data.HeldRequired);
+            var state = (Data.HeldKind, Data.HeldID, Data.HeldRefund, Data.StateFlags, Data.HeldRequired, Data.HeldPaid, Data.SaleLossPercent);
             if (!force && state == RenderedHeld)
             {
                 return;
@@ -1890,9 +2054,24 @@ namespace BlueprintShop
                 return;
             }
             SellButton.Rect.gameObject.SetActive(true);
-            string note = (Data.StateFlags & ShopStateFlags.UninstallPrep) != 0
-                ? "Uninstall prep is on, so refunds are $0."
-                : Data.HeldRefund > 0 ? "Refund is what you paid." : "It was free, so there's no refund.";
+            string note;
+            if ((Data.StateFlags & ShopStateFlags.UninstallPrep) != 0)
+            {
+                note = "Uninstall prep is on, so refunds are $0.";
+            }
+            else if (Data.HeldPaid <= 0)
+            {
+                note = "It was free, so there's no refund.";
+            }
+            else if (Data.SaleLossPercent <= 0)
+            {
+                note = "Refund is what you paid.";
+            }
+            else
+            {
+                // The host's balance setting: selling loses part of the price paid.
+                note = $"You paid {Coin(Data.HeldPaid)}; selling loses {Data.SaleLossPercent}%.";
+            }
             SellText.text = $"Holding <b>{what}</b>\n<color=#BFB2A3>{note}</color>";
             bool confirming = Time.unscaledTime <= SellConfirmUntil;
             SellButton.Label.text = confirming

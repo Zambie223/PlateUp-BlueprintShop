@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.0
+
+- New "Place items myself" tick box above the Purchase button. When it's ticked, appliances you buy are put straight into your hands one at a time instead of arriving as parcels, so you can set each one down where you want it. A panel at the bottom of the screen shows what's left, and your third-action button (Y / Triangle on a controller) swaps to the next kind of item. The shop can send whatever's left to the door as parcels. Parcels are still the default.
+- Settings can be changed in game with the Mod List mod (0.2.0 or newer): Pause â†’ Mods â†’ the gear next to Blueprint Shop. Without Mod List, they're in `BlueprintShop.cfg` as before.
+- New settings:
+  - **Upgrades unlock on:** the first night upgrades are on sale. Default: night 5, as in the base game.
+  - **Roll to unlock upgrades:** instead of a fixed night, each night has a growing chance to unlock upgrades (the **Upgrade chance per night** setting, default 10%: 10% on night 1, 20% on night 2 and so on). The shop shows tonight's result and next night's chance. Off by default.
+  - Once upgrades are unlocked, they stay unlocked for the rest of the run.
+  - **Price multiplier:** 0% to 1000%. Default: 100%; 0% makes everything free.
+  - **Sale loss:** how much of the price paid selling loses. Default: 0%.
+  - **Refund items left outside:** on by default; turn it off for the base game's behaviour.
+  - **Your own preferences:** whether **Place items myself** starts ticked, whether the floating sale prices are shown, and the shop menu's controller aim assist and cursor speed.
+- **Changed defaults:** decoration nights now come every 5th night, and normal items aren't sold on those nights, as in the base game. If you've played an earlier version, your config file keeps the values it already has (every 3rd night, normal items on), so change them if you want the base game's schedule.
+- The Shop terminal has its own hologram: a shopping cart instead of the reroll dice.
+- All players in an online game need 0.5.0; it can't be mixed with 0.4.x.
+
 ## 0.4.1
 
 - Floating prices over items outside are easier to read: they sit above the bin icon instead of on it, use a dark backing instead of a thick outline, and stay within their own tile, so neighbouring prices no longer overlap. The coin icon is gold instead of white.
