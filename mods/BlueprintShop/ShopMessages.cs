@@ -125,7 +125,7 @@ namespace BlueprintShop
         public int SaleLossPercent;
         /// <summary>The status line under the title (see UpgradeUnlock).</summary>
         public UpgradeState UpgradeState;
-        /// <summary>LockedUntilNight: the night upgrades unlock on.</summary>
+        /// <summary>LockedUntilNight: the night upgrades unlock on. UnlockedEarlier: the night they unlocked.</summary>
         public int UpgradeNight;
         /// <summary>Roll mode: tonight's and next night's unlock chance, in tenths of a percent.</summary>
         public int UpgradeChanceTonight;

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2
+
+- With **Roll to unlock upgrades** on, the shop keeps showing which night upgrades unlocked on. Before, the line under the title went blank after the night they unlocked.
+
 ## 0.5.1
 
 - The shop's "Place items myself" tick box shows its label again. It had shrunk to just the tick.

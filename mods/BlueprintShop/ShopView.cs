@@ -2009,6 +2009,11 @@ namespace BlueprintShop
                 case UpgradeState.UnlockedTonight:
                     text = "<color=#FF9800>Upgrades unlocked tonight!</color> They stay unlocked for the rest of the run.";
                     break;
+                case UpgradeState.UnlockedEarlier:
+                    text = Data.UpgradeNight > 0
+                        ? $"Upgrades unlocked on night {Data.UpgradeNight}. They stay unlocked for the rest of the run."
+                        : "Upgrades are unlocked for the rest of the run.";
+                    break;
                 default:
                     text = null;
                     break;

@@ -14,7 +14,13 @@ namespace BlueprintShop
         /// <summary>Roll mode, not unlocked yet: shows tonight's and next night's chance.</summary>
         LockedRoll = 2,
         /// <summary>Roll mode: tonight's roll unlocked them.</summary>
-        UnlockedTonight = 3
+        UnlockedTonight = 3,
+        /// <summary>
+        /// Roll mode: unlocked on an earlier night (UpgradeNight carries that night). Added in
+        /// 0.5.2 without a network format change: 0.5.0/0.5.1 menus treat an unknown state like
+        /// Available and show no line, as they always did for this case.
+        /// </summary>
+        UnlockedEarlier = 4
     }
 
     /// <summary>
@@ -77,6 +83,7 @@ namespace BlueprintShop
         public static void Evaluate(ref ShopService.CatalogContext ctx, float extraChance, bool unlocked, int unlockedDay, int salt)
         {
             int day = ctx.Day;
+            ctx.UpgradeNight = ShopSettings.UpgradeNight;
             if (ShopSettings.UpgradeRoll)
             {
                 float tonight = Combine(ShopSettings.UpgradeRollChance(day), extraChance);
@@ -94,7 +101,10 @@ namespace BlueprintShop
                 }
                 else
                 {
-                    ctx.UpgradeState = UpgradeState.Available;
+                    // Keep saying so on later nights (user report 2026-11-19: with the roll on,
+                    // a blank line after the unlock night looked like the setting wasn't working).
+                    ctx.UpgradeState = UpgradeState.UnlockedEarlier;
+                    ctx.UpgradeNight = unlockedDay;
                 }
                 return;
             }

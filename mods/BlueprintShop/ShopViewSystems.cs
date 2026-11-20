@@ -108,7 +108,7 @@ namespace BlueprintShop
                     HeldPaid = held.Paid,
                     SaleLossPercent = ShopSettings.SaleLossPercent,
                     UpgradeState = ctx.UpgradeState,
-                    UpgradeNight = ShopSettings.UpgradeNight,
+                    UpgradeNight = ctx.UpgradeNight,
                     UpgradeChanceTonight = UnityEngine.Mathf.RoundToInt(ctx.UpgradeChanceTonight * 1000f),
                     UpgradeChanceNext = UnityEngine.Mathf.RoundToInt(ctx.UpgradeChanceNext * 1000f)
                 });

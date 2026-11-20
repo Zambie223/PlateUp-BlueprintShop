@@ -308,6 +308,8 @@ namespace BlueprintShop
             public bool UpgradesAvailable;
             /// <summary>What the shop tells players about upgrades (status line under the title).</summary>
             public UpgradeState UpgradeState;
+            /// <summary>LockedUntilNight: the night they unlock on. UnlockedEarlier: the night they unlocked.</summary>
+            public int UpgradeNight;
             /// <summary>Roll mode: tonight's and next night's unlock chance (0 to 1), cards included.</summary>
             public float UpgradeChanceTonight;
             public float UpgradeChanceNext;
