@@ -396,7 +396,7 @@ namespace BlueprintShop
         /// Every blueprint the vanilla shop could offer tonight. Eligibility comes from the
         /// game's own CShopBuilderOption pool, which the ShopBuilder filters already narrow by
         /// dish, theme, owned appliances and staples; this applies the per-letter rules from
-        /// HandleNewShop.OnUpdate on top.
+        /// HandleNewShop.OnUpdate on top. The only additions are in ShopAdditions.
         /// </summary>
         public List<ShopEntry> BuildCatalog(CatalogContext ctx)
         {
@@ -414,7 +414,8 @@ namespace BlueprintShop
                 bool decorMatch = ctx.IsDecorNight
                     && (option.MatchesRequestTags(ShoppingTags.Decoration) || option.MatchesRequestTags(ShoppingTags.SpecialEvent));
                 bool normalMatch = (!ctx.IsDecorNight || ShopSettings.NormalItemsOnDecorNights)
-                    && (option.MatchesRequestTags(ShoppingTags.Basic) || option.MatchesRequestTags(ShoppingTagsExtensions.DefaultShoppingTag));
+                    && (option.MatchesRequestTags(ShoppingTags.Basic) || option.MatchesRequestTags(ShoppingTagsExtensions.DefaultShoppingTag)
+                        || option.Appliance == ShopAdditions.Woks);
                 bool matches = decorMatch || normalMatch;
                 if (!matches)
                 {
@@ -449,6 +450,25 @@ namespace BlueprintShop
                     Price = AppliancePrice(appliance, ctx),
                     Flags = flags
                 });
+            }
+
+            // Not in the game's pool. Sold as upgrades, locked until upgrades are unlocked, because
+            // buying them skips the research.
+            if (ShopSettings.SellDeskUpgrades && ctx.UpgradesAvailable && (!ctx.IsDecorNight || ShopSettings.NormalItemsOnDecorNights))
+            {
+                foreach (int id in ShopAdditions.DeskUpgrades)
+                {
+                    if (Data.TryGet(id, out Appliance upgrade) && seen.Add(id))
+                    {
+                        result.Add(new ShopEntry
+                        {
+                            Kind = ShopEntryKind.Appliance,
+                            ID = id,
+                            Price = AppliancePrice(upgrade, ctx),
+                            Flags = ShopEntryFlags.Upgrade
+                        });
+                    }
+                }
             }
 
             if (ctx.IsDecorNight)
@@ -531,6 +551,70 @@ namespace BlueprintShop
             }
             string text = sb.ToString();
             ShopLog.Debug(() => text);
+            LogNotOnSale(ctx, catalog);
+        }
+
+        /// <summary>Verbose only: every appliance the shop doesn't list tonight, grouped by why.</summary>
+        private void LogNotOnSale(CatalogContext ctx, List<ShopEntry> catalog)
+        {
+            var onSale = new HashSet<int>();
+            foreach (ShopEntry e in catalog)
+            {
+                if (e.Kind == ShopEntryKind.Appliance)
+                {
+                    onSale.Add(e.ID);
+                }
+            }
+            var pool = new Dictionary<int, CShopBuilderOption>();
+            using (NativeArray<CShopBuilderOption> options = ShopOptions.ToComponentDataArray<CShopBuilderOption>(Allocator.Temp))
+            {
+                foreach (CShopBuilderOption option in options)
+                {
+                    pool[option.Appliance] = option;
+                }
+            }
+            var groups = new SortedDictionary<string, List<string>>(StringComparer.Ordinal);
+            foreach (Appliance a in Data.Get<Appliance>())
+            {
+                if (onSale.Contains(a.ID))
+                {
+                    continue;
+                }
+                string reason;
+                if (pool.TryGetValue(a.ID, out CShopBuilderOption option))
+                {
+                    reason = option.IsRemoved ? $"removed by the game's {FilterName(option.FilteredBy)}"
+                        : !ctx.UpgradesAvailable && option.Staple == ShopStapleType.NonStaple && option.SellAsUpgrade ? "upgrades are locked"
+                        : $"not a category on sale tonight ({option.Tags})";
+                }
+                else if (!a.IsPurchasable && !a.IsPurchasableAsUpgrade)
+                {
+                    reason = a.IsAnUpgrade ? "never sold by the game (an upgrade from a research desk)" : "never sold by the game";
+                }
+                else
+                {
+                    reason = $"not in the game's pool (season {a.RestrictedToSeason})";
+                }
+                if (!groups.TryGetValue(reason, out List<string> names))
+                {
+                    groups[reason] = names = new List<string>();
+                }
+                names.Add($"{a.name} (#{a.ID})");
+            }
+            var sb = new StringBuilder($"Not on sale on day {ctx.Day}:");
+            foreach (KeyValuePair<string, List<string>> group in groups)
+            {
+                group.Value.Sort(StringComparer.Ordinal);
+                sb.Append($"\n  {group.Key} ({group.Value.Count}): {string.Join(", ", group.Value)}");
+            }
+            string text = sb.ToString();
+            ShopLog.Debug(() => text);
+        }
+
+        private static string FilterName(SystemReference system)
+        {
+            string name = SystemReference.GetName((int)system);
+            return name.Length > 0 ? name : "shop filters";
         }
 
         /// <summary>How many of each catalog appliance the restaurant has (placed, carried or in a parcel).</summary>

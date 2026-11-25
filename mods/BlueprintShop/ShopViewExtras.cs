@@ -160,6 +160,13 @@ namespace BlueprintShop
             {
                 return "unknown item";
             }
+            bool upgradesLocked = Data.UpgradeState == UpgradeState.LockedUntilNight || Data.UpgradeState == UpgradeState.LockedRoll;
+            // An unlisted desk upgrade may just be waiting for upgrades or a normal night: whether
+            // the host sells them at all (sell_desk_upgrades) isn't sent to the menu.
+            if (ShopAdditions.IsDeskUpgrade(id) && (Data.IsDecorNight || upgradesLocked))
+            {
+                return "not on sale tonight";
+            }
             if (!a.IsPurchasable && !a.IsPurchasableAsUpgrade)
             {
                 return "not sold in the shop";
@@ -168,7 +175,9 @@ namespace BlueprintShop
             {
                 return "only one allowed";
             }
-            if ((a.IsAnUpgrade || !a.IsPurchasable) && (Data.UpgradeState == UpgradeState.LockedUntilNight || Data.UpgradeState == UpgradeState.LockedRoll))
+            // Vanilla's rule (CShopBuilderOption.SellAsUpgrade). Not IsAnUpgrade: the Combiner, for
+            // one, is an upgrade but sold from the start.
+            if (a.IsPurchasableAsUpgrade && upgradesLocked)
             {
                 return "upgrades are locked";
             }

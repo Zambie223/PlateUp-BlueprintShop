@@ -59,8 +59,9 @@ namespace BlueprintShop
             { Category.Surfaces, "Walls & Floors" }
         };
 
-        /// <summary>Upgrade -> the appliance it upgrades, built once from game data.</summary>
-        private static Dictionary<int, int> _upgradeBase;
+        /// <summary>Static game data, built once: appliance ID -> appliances that upgrade into it.</summary>
+        private static Dictionary<int, List<Appliance>> _upgradeParents;
+        private static readonly Dictionary<int, List<int>> UpgradeBases = new Dictionary<int, List<int>>();
 
         // ================================================================= constants
 
@@ -1242,11 +1243,18 @@ namespace BlueprintShop
 
         // ---- categories
 
-        private static int RootOf(int applianceId)
+        /// <summary>
+        /// What this appliance is an upgrade of (empty when it isn't one). Many upgrades also
+        /// upgrade into each other (Smart and Rotating Grabbers, the sinks, the mixers...), so a
+        /// parent that can be reached back from the appliance is a sibling, not its base, and is
+        /// left out. Appliances the game never sells (starter and shoddy variants) are only
+        /// named when there's nothing else.
+        /// </summary>
+        private static List<int> BasesOf(int applianceId)
         {
-            if (_upgradeBase == null)
+            if (_upgradeParents == null)
             {
-                _upgradeBase = new Dictionary<int, int>();
+                _upgradeParents = new Dictionary<int, List<Appliance>>();
                 foreach (Appliance a in GameData.Main.Get<Appliance>())
                 {
                     if (a?.Upgrades == null)
@@ -1255,17 +1263,78 @@ namespace BlueprintShop
                     }
                     foreach (Appliance u in a.Upgrades)
                     {
-                        if (u != null && u.ID != a.ID && !_upgradeBase.ContainsKey(u.ID))
+                        if (u == null || u.ID == a.ID)
                         {
-                            _upgradeBase[u.ID] = a.ID;
+                            continue;
+                        }
+                        if (!_upgradeParents.TryGetValue(u.ID, out List<Appliance> parents))
+                        {
+                            _upgradeParents[u.ID] = parents = new List<Appliance>();
+                        }
+                        if (!parents.Contains(a))
+                        {
+                            parents.Add(a);
                         }
                     }
                 }
             }
-            int id = applianceId;
-            for (int i = 0; i < 6 && _upgradeBase.TryGetValue(id, out int parent); i++)
+            if (UpgradeBases.TryGetValue(applianceId, out List<int> bases))
             {
-                id = parent;
+                return bases;
+            }
+            bases = new List<int>();
+            if (_upgradeParents.TryGetValue(applianceId, out List<Appliance> direct))
+            {
+                HashSet<int> reachable = UpgradesReachableFrom(applianceId);
+                foreach (bool sold in new[] { true, false })
+                {
+                    foreach (Appliance p in direct)
+                    {
+                        if (!reachable.Contains(p.ID) && (p.IsPurchasable || p.IsPurchasableAsUpgrade) == sold)
+                        {
+                            bases.Add(p.ID);
+                        }
+                    }
+                    if (bases.Count > 0)
+                    {
+                        break;
+                    }
+                }
+            }
+            UpgradeBases[applianceId] = bases;
+            return bases;
+        }
+
+        private static HashSet<int> UpgradesReachableFrom(int applianceId)
+        {
+            var seen = new HashSet<int>();
+            var todo = new Stack<int>();
+            todo.Push(applianceId);
+            while (todo.Count > 0)
+            {
+                if (!GameData.Main.TryGet(todo.Pop(), out Appliance a) || a.Upgrades == null)
+                {
+                    continue;
+                }
+                foreach (Appliance u in a.Upgrades)
+                {
+                    if (u != null && seen.Add(u.ID))
+                    {
+                        todo.Push(u.ID);
+                    }
+                }
+            }
+            return seen;
+        }
+
+        /// <summary>The start of the appliance's upgrade line (itself when it isn't an upgrade).</summary>
+        private static int RootOf(int applianceId)
+        {
+            // Every step leaves the current loop for good, so this can't go around.
+            int id = applianceId;
+            for (List<int> bases = BasesOf(id); bases.Count > 0; bases = BasesOf(id))
+            {
+                id = bases[0];
             }
             return id;
         }
@@ -2274,10 +2343,15 @@ namespace BlueprintShop
                 return $"#{entry.ID}";
             }
             sb.Append("<size=125%><b>").Append(a.Name).Append("</b></size>\n");
-            int root = RootOf(entry.ID);
-            if (root != entry.ID)
+            List<int> bases = BasesOf(entry.ID);
+            if (bases.Count > 0)
             {
-                sb.Append("<color=#BFB2A3>Upgrade of ").Append(ApplianceName(root)).Append("</color>\n");
+                sb.Append("<color=#BFB2A3>Upgrade of ");
+                for (int i = 0; i < bases.Count; i++)
+                {
+                    sb.Append(i == 0 ? "" : " or ").Append(ApplianceName(bases[i]));
+                }
+                sb.Append("</color>\n");
             }
             if (!string.IsNullOrEmpty(a.Description))
             {

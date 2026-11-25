@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.0 (pre-release)
+
+- **Sell desk-only upgrades:** a new host setting, off by default, that adds the Teleporter, Buffet - Heated and Buffet - Platter to the shop. In the base game they never come in a letter; they're only research desk upgrades of the Dumbwaiter and the Buffet. They're sold once upgrades are unlocked, at the game's own prices (1250, 120 and 120 before discounts).
+- Woks are on sale once you own one. The game marks them as buyable that way, but its letters never offer them.
+- A teleporter whose partner is sold, thrown away or taken back now pairs with another one the next night, or straight away if it's still night. In the base game it could stay unpaired, so a new teleporter would not link to it.
+- Item details: appliances that upgrade into each other (Smart and Rotating Grabbers, hobs, mixers, bins, tables, desks) now show the right "Upgrade of" line. Before, it was missing or named the wrong appliance. The line now always names what you'd research to get the item: a Smart Grabber says Grabber.
+- Upgraded tables are now in the Essentials tab with the Dining Table, like other upgrades.
+- Copy from floor and wishlists: some items that aren't locked upgrades could be listed as "upgrades are locked". They now get the right reason.
+- Verbose logging now also lists which appliances aren't on sale tonight, and why.
+- Works in the same online game as 0.7.x.
+
 ## 0.7.1
 
 - Copy from floor: the camera looks straight down while you draw the box, and goes back to normal afterwards.

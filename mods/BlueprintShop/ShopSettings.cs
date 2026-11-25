@@ -35,6 +35,7 @@ namespace BlueprintShop
         // Defaults. Every shop rule and balance setting defaults to the base game's behaviour.
         public const int DefaultDecorInterval = 5;
         public const bool DefaultNormalItemsOnDecorNights = false;
+        public const bool DefaultSellDeskUpgrades = false;
         public const bool DefaultRefundOutsideAtDayStart = true;
         public const int DefaultUpgradeNight = 5;
         public const bool DefaultUpgradeRoll = false;
@@ -90,6 +91,9 @@ namespace BlueprintShop
 
         /// <summary>Decoration nights also list the normal appliances (vanilla: decorations only).</summary>
         public static bool NormalItemsOnDecorNights { get; set; } = DefaultNormalItemsOnDecorNights;
+
+        /// <summary>Once upgrades are unlocked, the shop also sells those that vanilla only gives through a research desk (see ShopAdditions).</summary>
+        public static bool SellDeskUpgrades { get; set; } = DefaultSellDeskUpgrades;
 
         /// <summary>Refund bought items still outside at the start of the day (vanilla deletes them for $0).</summary>
         public static bool RefundOutsideAtDayStart { get; set; } = DefaultRefundOutsideAtDayStart;
@@ -185,6 +189,7 @@ namespace BlueprintShop
         {
             DecorInterval = DefaultDecorInterval;
             NormalItemsOnDecorNights = DefaultNormalItemsOnDecorNights;
+            SellDeskUpgrades = DefaultSellDeskUpgrades;
             UpgradeNight = DefaultUpgradeNight;
             UpgradeRoll = DefaultUpgradeRoll;
             UpgradeChancePerNight = DefaultUpgradeChancePerNight;
@@ -228,6 +233,9 @@ namespace BlueprintShop
                 () => DecorInterval, v => DecorInterval = v, MinDecorInterval, MaxDecorInterval),
             Bool("normal_items_on_decor_nights", "normal_items_on_decor_nights=true: decoration nights also sell normal appliances (vanilla: false).",
                 () => NormalItemsOnDecorNights, v => NormalItemsOnDecorNights = v),
+            Bool("sell_desk_upgrades", "sell_desk_upgrades=true (host setting): once upgrades are unlocked, the shop also sells the Teleporter,\n" +
+                 "Buffet - Heated and Buffet - Platter (vanilla: false; they only come from a research desk).",
+                 () => SellDeskUpgrades, v => SellDeskUpgrades = v),
             Int("upgrade_night", "upgrade_night=N: upgraded appliances are on sale from night N (" + MinUpgradeNight + " to " + MaxUpgradeNight + "; vanilla: 5).\n" +
                 "Cards that raise the upgrade chance can still unlock them earlier.",
                 () => UpgradeNight, v => UpgradeNight = v, MinUpgradeNight, MaxUpgradeNight),
@@ -466,7 +474,7 @@ namespace BlueprintShop
             $"verbose logging {(Verbose ? "ON" : "off")}, decorations every {DecorInterval} night(s), " +
             $"normal items on decoration nights {(NormalItemsOnDecorNights ? "on" : "off")}, " +
             (UpgradeRoll ? $"upgrades by nightly roll (+{UpgradeChancePerNight}% per night), " : $"upgrades from night {UpgradeNight}, ") +
-            $"prices {PricePercent}%, sale loss {SaleLossPercent}%, day-start refund {(RefundOutsideAtDayStart ? "on" : "off")}" +
+            $"desk-only upgrades {(SellDeskUpgrades ? "on sale" : "not sold")}, prices {PricePercent}%, sale loss {SaleLossPercent}%, day-start refund {(RefundOutsideAtDayStart ? "on" : "off")}" +
             (PrepareUninstall ? ", PREPARE UNINSTALL ON" : "") + $", config: {ConfigPath}";
     }
 }

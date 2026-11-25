@@ -65,6 +65,16 @@ namespace BlueprintShop
                 },
                 new Dictionary<string, object>
                 {
+                    ["id"] = "sell_desk_upgrades",
+                    ["type"] = "bool",
+                    ["label"] = "Sell desk-only upgrades",
+                    ["description"] = "Adds the Teleporter and the two upgraded Buffets to the shop once upgrades are unlocked. In the base game they only come from a research desk. Base game: Off. Host's setting applies.",
+                    ["get"] = (Func<bool>)(() => ShopSettings.SellDeskUpgrades),
+                    ["set"] = (Action<bool>)(v => ShopSettings.SellDeskUpgrades = v),
+                    ["enabled"] = notClient,
+                },
+                new Dictionary<string, object>
+                {
                     ["id"] = "refund_outside_at_day_start",
                     ["type"] = "bool",
                     ["label"] = "Refund items left outside",

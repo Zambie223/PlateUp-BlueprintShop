@@ -2,12 +2,12 @@
 
 A PlateUp! mod that replaces the random nightly blueprint letters with a shop. Every blueprint the game could offer you tonight is listed at once, and you can buy as many of each as you can afford.
 
-The goal is to remove the luck of which blueprints show up. By default, prices, discounts, what's eligible for your restaurant, the decoration schedule and when upgrades unlock all follow the base game's rules. The one change on by default is that bought items you leave outside are refunded at the start of the day, instead of thrown away. If you want a different game, [settings](#settings) change the schedule, prices and how much selling gives back, in game or in a config file.
+The goal is to remove the luck of which blueprints show up. By default, prices, discounts, what's eligible for your restaurant, the decoration schedule and when upgrades unlock all follow the base game's rules. Two changes are on by default: bought items you leave outside are refunded at the start of the day instead of thrown away, and (from 0.8.0) you can buy more Woks once you own one. If you want a different game, [settings](#settings) change the schedule, prices and how much selling gives back, in game or in a config file.
 
 ## Installing
 
 1. Subscribe to the **Harmony** mod on the Steam Workshop (id `2898033283`) and launch PlateUp once so it downloads.
-2. Download `BlueprintShop-<version>.zip` from this repo's [Releases](../../releases) page.
+2. Download `BlueprintShop-<version>.zip` from this repo's [Releases](../../releases) page. The one marked **Latest** is the newest full release. Builds marked **Pre-release** are for testing new changes, and may not have been play-tested yet.
 3. Extract it into PlateUp's `Mods` folder, so you end up with `Mods\BlueprintShop\BlueprintShop.dll`.
    The `Mods` folder sits next to `PlateUp.exe`, by default `C:\Program Files (x86)\Steam\steamapps\common\PlateUp\PlateUp\Mods`. Create it if it doesn't exist.
 4. Start the game.
@@ -62,9 +62,9 @@ Your chef stands still while the menu is open. Other players keep playing. In lo
 
 ## Rules it keeps from the base game
 
-These are the defaults. The [settings](#settings) can change the upgrade night, the decoration schedule and prices.
+These are the defaults. The [settings](#settings) can change the upgrade night, the decoration schedule and prices, and add upgrades that only come from a research desk.
 
-- **What's offered:** the game's own shop pool. Items that need a specific dish, theme or appliance, "only one allowed" items you already own, and staples all work as in vanilla.
+- **What's offered:** the game's own shop pool. Items that need a specific dish, theme or appliance, "only one allowed" items you already own, and staples all work as in vanilla. The one addition (from 0.8.0) is Woks, sold once you own one: the game marks them as buyable that way, but gives them no shop category, so its letters never offer them.
 - **Upgraded appliances:** available on any night the base game could offer them, which is night 5 onward, or earlier if a card raises the upgrade chance. The base game only gives each letter a chance at an upgrade from then on, while the shop lists them all; the [settings](#settings) can make unlocking them a nightly roll instead. With the base game's decoration schedule, night 5 sells only decorations, so upgrades first show up on night 6.
 - **Prices:** exactly the blueprint price: the item's price tier, times every active discount. That includes discount cards, restaurant settings such as Turbo, and the Lunar New Year event. With the "random prices" card, each item gets one random price per night instead of one per letter.
 - **"Only one allowed" items:** limited to one per order, and blocked while one is still waiting in a parcel or as a blueprint.
@@ -85,6 +85,7 @@ Settings marked *host* are about how the game plays. In online games, only the h
 | **Shop rules** | | | |
 | Decoration nights (host) | `decor_interval` | `5` (base game) | Decorations, wallpapers and floors are on sale every this many nights, from 1 to 20. |
 | Normal items on decoration nights (host) | `normal_items_on_decor_nights` | `false` (base game) | Decoration nights also sell normal appliances. |
+| Sell desk-only upgrades (host) | `sell_desk_upgrades` | `false` (base game) | From 0.8.0. Adds the Teleporter, Buffet - Heated and Buffet - Platter to the shop at the game's own prices (1250, 120 and 120 before discounts). In the base game they never come in a letter; they're only research desk upgrades of the Dumbwaiter and the Buffet. They're sold once upgrades are unlocked, on every night that normal appliances are. |
 | Refund items left outside (host) | `refund_outside_at_day_start` | `true` | Bought items still outside when the day starts are sold automatically. `false` gives the base game's behaviour: they're thrown away for nothing. |
 | **Balance** | | | |
 | Price multiplier (host) | `price_percent` | `100` (base game) | Applies to every shop price, on top of the game's own discounts, from 0% to 1000%. 0% makes everything free. |
@@ -177,4 +178,4 @@ The source code in this repository is under the [MIT License](LICENSE). PlateUp!
 
 ### Responsible AI use disclosure
 
-This mod was written with the assistance of an AI coding tool (Claude, by Anthropic), under the direction of the author (Zambie). Its behavior is based on the game's own code, which was read to match the base game's shop rules, rather than on AI recall. It is play-tested in-game, including online co-op, before each release.
+This mod was written with the assistance of an AI coding tool (Claude, by Anthropic), under the direction of the author (Zambie). Its behavior is based on the game's own code, which was read to match the base game's shop rules, rather than on AI recall. Full releases are play-tested in-game, including online co-op. Pre-releases are published so that people can help test them, and may not have been play-tested yet.
